@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -536,8 +537,11 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 
 	var out []byte
 	var chunks []json.RawMessage
+	parts, textParts := 0, 0
 	err := m.exec.Turn(ctx, spec, tc, func(p connector.Part) {
+		parts++
 		if p.Kind == "text" {
+			textParts++
 			out = append(out, p.Text...)
 		}
 		if keepChunks && len(p.Raw) > 0 {
@@ -558,10 +562,49 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 	default:
 		finish(l, t, TurnDone, "", string(out))
 		m.emit(s.id, "turn.finished", agent, t.ID, map[string]any{"chars": len(out)})
+		// A turn that succeeds without saying anything is reported as such. It is
+		// not an error — the request worked — but leaving it to look like any
+		// other success means the room simply goes quiet, and the framework in the
+		// middle gets blamed for whatever actually happened upstream.
+		if strings.TrimSpace(string(out)) == "" {
+			m.emit(s.id, "turn.empty", agent, t.ID, emptyTurn(parts, textParts, spec))
+		}
 		// After turn.finished, so the log reads in the order things happened:
 		// the agent answered, and then the room changed because of it.
 		m.applyContextRules(s.id, spec, agent, string(out), chunks)
 	}
+}
+
+// emptyTurn says why a turn produced no text. Two cases, because two is what is
+// actually observable here, and they have different culprits:
+//
+//	nothing arrived    upstream: a budget spent on reasoning before the agent
+//	                   answered, a rate limit, a model that declined
+//	nothing readable   the payload arrived and no text came out of it
+//
+// The second does not narrow further. A selector that does not fit the payload
+// and an agent that answered with an empty string both reach the executor and
+// leave as activity rather than text, so claiming which one it was would be a
+// guess — and a confident wrong guess sends someone to the wrong file.
+//
+// What is offered instead is the selectors themselves, because reading them
+// against the raw view is the step that actually settles it, and having them
+// here saves opening the connector to find out what they were.
+func emptyTurn(parts, textParts int, spec *connector.Spec) map[string]any {
+	d := map[string]any{"parts": parts, "text_parts": textParts}
+	if parts == 0 {
+		d["reason"] = "the agent sent nothing at all"
+		return d
+	}
+	d["reason"] = fmt.Sprintf(
+		"the agent sent %d parts and no text came out of them; check these selectors against the raw view", parts)
+	if spec.Turn != nil && spec.Turn.Response != nil {
+		d["text"] = spec.Turn.Response.Text
+		if w := spec.Turn.Response.When; w != "" {
+			d["when"] = w
+		}
+	}
+	return d
 }
 
 func selectsFromPayload(spec *connector.Spec) bool {

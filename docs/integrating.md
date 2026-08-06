@@ -410,6 +410,38 @@ them* without starting a session.
 When a selector isn't matching, that is the fastest way to see what actually
 arrived rather than guessing.
 
+### A turn that finishes without saying anything
+
+This is the one that wastes an afternoon, because it isn't an error — the
+request worked, the turn succeeded, and the room simply stays quiet. Oryxa emits
+a `turn.empty` event whenever a turn completes with no text, saying which of two
+things happened:
+
+```json
+{"parts": 0, "text_parts": 0, "reason": "the agent sent nothing at all"}
+```
+
+Nothing arrived. The cause is upstream, not here — most often a token budget
+spent on reasoning before the model got to an answer, a rate limit, or a refusal.
+Check the agent's own logs.
+
+```json
+{"parts": 14, "text_parts": 0,
+ "reason": "the agent sent 14 parts and no text came out of them; check these
+            selectors against the raw view",
+ "text": ["$.content"], "when": "$.partial"}
+```
+
+The payload arrived and nothing readable came out of it. Usually a `text:`
+selector that doesn't fit the payload, or a `when:` gate that excluded every
+chunk — but it can also be an agent that genuinely answered with an empty
+string. Oryxa doesn't guess between those, because a confident wrong guess sends
+you to the wrong file. The selectors are echoed so you can compare them against
+the raw view, which settles it in seconds.
+
+Neither case fails the turn or writes to shared context: an empty answer recorded
+as a finding is worse than no finding.
+
 ---
 
 ## Worked examples

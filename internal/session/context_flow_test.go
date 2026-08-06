@@ -1008,3 +1008,131 @@ func TestElisionFollowsWhatWasRead(t *testing.T) {
 		t.Fatalf("elided=%d for a reader that never saw the trimmed list", d.Elided)
 	}
 }
+
+// ---- a turn that succeeds without saying anything ----
+
+func emptyEvent(t *testing.T, log events.Store, id string) map[string]any {
+	t.Helper()
+	evs, err := log.Since(id, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evs {
+		if e.Kind == "turn.empty" {
+			var d map[string]any
+			if err := json.Unmarshal(e.Data, &d); err != nil {
+				t.Fatalf("turn.empty data: %v", err)
+			}
+			return d
+		}
+	}
+	t.Fatalf("no turn.empty event; log has %v", kinds(t, log, id))
+	return nil
+}
+
+// An agent that returns nothing is not an error — the request worked. But a
+// silent success looks like every other success, and the framework in the middle
+// gets blamed for whatever went wrong upstream.
+//
+// This agent answers with an empty string. Oryxa cannot tell that apart from a
+// selector that missed — both leave the executor as activity rather than text —
+// so it reports what it knows and offers the selectors to check.
+func TestAgentAnsweringWithNothingIsReported(t *testing.T) {
+	a := newAgent(t, func(w http.ResponseWriter, _ string) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"content": ""})
+	})
+	m, log := setup(t, spec("a", a))
+	id := room(t, m, "a")
+
+	ask(t, m, id, "go", 1)
+
+	d := emptyEvent(t, log, id)
+	if got, _ := d["reason"].(string); !strings.Contains(got, "no text came out") {
+		t.Fatalf("reason = %q, want the nothing-readable case", got)
+	}
+	// The turn still succeeded; this is a report, not a failure.
+	v, _ := m.View(id)
+	if v.History[0].State != TurnDone {
+		t.Fatalf("turn state = %q, want done", v.History[0].State)
+	}
+}
+
+// The case worth telling apart: the agent answered fine and the connector's
+// selector missed it. Everything succeeds and the answer is simply absent, which
+// is the most common mistake in a new connector and the hardest to see.
+func TestSelectorThatMatchesNothingSaysSo(t *testing.T) {
+	a := newAgent(t, func(w http.ResponseWriter, _ string) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, c := range []string{`{"answer":"the api is rate limited"}`, `{"answer":" and slow"}`} {
+			fmt.Fprintf(w, "data: %s\n\n", c)
+		}
+	})
+	// $.content is wrong for this agent: it sends $.answer.
+	s := specTmpl("a", a, defaultPrompt)
+	s.Turn.Response = &connector.Response{Format: "sse", Text: []string{"$.content"}}
+	m, log := setup(t, s)
+	id := room(t, m, "a")
+
+	ask(t, m, id, "go", 1)
+
+	d := emptyEvent(t, log, id)
+	if n, _ := d["parts"].(float64); n < 2 {
+		t.Fatalf("parts = %v, want the chunks the agent actually sent", d["parts"])
+	}
+	if got, _ := d["reason"].(string); !strings.Contains(got, "no text came out") {
+		t.Fatalf("reason = %q, want the nothing-readable case", got)
+	}
+	// The selectors are echoed so the next step doesn't require opening the file.
+	sel, _ := d["text"].([]any)
+	if len(sel) != 1 || sel[0] != "$.content" {
+		t.Fatalf("text selectors = %v, want the ones that missed", d["text"])
+	}
+}
+
+// Whitespace is not an answer.
+func TestWhitespaceOnlyCountsAsEmpty(t *testing.T) {
+	a := newAgent(t, replies("   \n  "))
+	m, log := setup(t, spec("a", a))
+	id := room(t, m, "a")
+
+	ask(t, m, id, "go", 1)
+	emptyEvent(t, log, id)
+}
+
+// A turn that answered must not be reported as silent, or the event means
+// nothing.
+func TestNormalTurnEmitsNoEmptyEvent(t *testing.T) {
+	a := newAgent(t, replies("an answer"))
+	m, log := setup(t, spec("a", a))
+	id := room(t, m, "a")
+
+	ask(t, m, id, "go", 1)
+	for _, k := range kinds(t, log, id) {
+		if k == "turn.empty" {
+			t.Fatal("a turn that answered was reported as empty")
+		}
+	}
+}
+
+// The third case: nothing arrived at all. Distinct from an empty answer, because
+// the culprit is upstream rather than in the response or the connector.
+func TestAgentThatStreamsNothingIsReported(t *testing.T) {
+	a := newAgent(t, func(w http.ResponseWriter, _ string) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Connection opens, nothing is ever sent.
+	})
+	s := specTmpl("a", a, defaultPrompt)
+	s.Turn.Response = &connector.Response{Format: "sse", Text: []string{"$.content"}}
+	m, log := setup(t, s)
+	id := room(t, m, "a")
+
+	ask(t, m, id, "go", 1)
+
+	d := emptyEvent(t, log, id)
+	if got, _ := d["reason"].(string); !strings.Contains(got, "nothing at all") {
+		t.Fatalf("reason = %q, want the nothing-arrived case", got)
+	}
+	if n, _ := d["parts"].(float64); n != 0 {
+		t.Fatalf("parts = %v, want 0", d["parts"])
+	}
+}
