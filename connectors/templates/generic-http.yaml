@@ -1,0 +1,31 @@
+# The zero-framework path. Anything that can accept a prompt and return text
+# can join a session — a Flask route, a Lambda, a shell script behind a server.
+#
+# This is also the fallback when no other template fits: expose one endpoint,
+# point a connector at it, done.
+name: my-agent
+base: http://localhost:5000
+
+# No `open` block: agents without a conversation concept just omit it, and
+# {{handle}} falls back to the Oryxa session id if the spec references it.
+
+turn:
+  method: POST
+  path: /run
+  headers:
+    Authorization: "Bearer {{env.MY_AGENT_TOKEN}}"
+  body:
+    prompt: "{{input}}"
+    conversation: "{{conversation}}"
+  response:
+    format: json          # or: sse, ndjson
+    text:
+      - $.output          # tried in order; first match wins
+      - $.response
+      - $.text
+    error: $.error
+
+# ---------------------------------------------------------------------------
+# A verified instance of this template lives at connectors/pydanticai.yaml —
+# Pydantic AI behind FastAPI. That is the common case: a framework with no
+# server of its own, wrapped in whatever web layer the team already runs.

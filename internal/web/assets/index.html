@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oryxa</title>
+<style>
+  :root {
+    --bg:#0e1013; --panel:#15181d; --panel2:#1b1f26; --line:#262b33;
+    --fg:#e6e9ef; --dim:#8b93a1; --faint:#5b636f;
+    --accent:#5eead4; --warn:#fbbf24; --bad:#f87171; --good:#4ade80;
+    --user:#60a5fa;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#f7f8fa; --panel:#fff; --panel2:#f0f2f5; --line:#dfe3ea;
+      --fg:#151922; --dim:#5b636f; --faint:#98a0ad;
+      --accent:#0d9488; --user:#2563eb;
+    }
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; height:100vh; display:flex; flex-direction:column;
+    background:var(--bg); color:var(--fg);
+    font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    overflow-x:hidden;   /* nothing here should ever scroll sideways */
+  }
+  header {
+    display:flex; align-items:center; gap:12px; padding:10px 16px;
+    border-bottom:1px solid var(--line); background:var(--panel);
+  }
+  .logo { font-weight:700; letter-spacing:.18em; color:var(--accent); }
+  .tag { color:var(--faint); font-size:12px; }
+  .spacer { flex:1; }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .dot.ok{background:var(--good)} .dot.bad{background:var(--bad)}
+  .dot.unknown{background:var(--faint)} .dot.busy{background:var(--warn)}
+
+  main { flex:1; display:flex; min-height:0; }
+  aside {
+    width:290px; flex:0 1 290px; min-width:180px;
+    border-right:1px solid var(--line);
+    background:var(--panel); overflow-y:auto; overflow-x:hidden; padding:14px;
+  }
+  h2 {
+    font-size:11px; letter-spacing:.14em; color:var(--faint);
+    margin:20px 0 8px; font-weight:600; text-transform:uppercase;
+  }
+  h2:first-child { margin-top:0; }
+
+  /* Rows are real buttons so they are keyboard- and screen-reader-reachable;
+     a clickable div is invisible to both. */
+  .row {
+    display:flex; align-items:center; gap:8px; padding:7px 9px; width:100%;
+    border-radius:6px; cursor:pointer; border:1px solid transparent;
+    background:none; color:inherit; font:inherit; text-align:left;
+  }
+  .row:hover { background:var(--panel2); }
+  .row:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .row.sel { background:var(--panel2); border-color:var(--line); }
+  .row .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .meta { color:var(--faint); font-size:11px; }
+  .row .tick { width:9px; color:var(--accent); font-size:11px; }
+
+  button {
+    font:inherit; font-size:12px; padding:5px 10px; border-radius:6px;
+    border:1px solid var(--line); background:var(--panel2); color:var(--fg);
+    cursor:pointer;
+  }
+  button:hover { border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; border-color:var(--line); }
+  .mini { padding:2px 7px; font-size:11px; }
+
+  section.room { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .roomhead {
+    padding:10px 16px; border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:14px; background:var(--panel);
+    min-width:0; overflow:hidden; white-space:nowrap;
+  }
+  .roomhead > span { min-width:0; display:flex; gap:5px; align-items:baseline; }
+  .roomhead .k { color:var(--faint); font-size:11px; flex-shrink:0; }
+  .roomhead .v {
+    color:var(--dim); font-size:12px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  /* The handle can be long and is the least important thing here — let it be
+     the first to truncate rather than pushing the rest off-screen. */
+  #rhandle { max-width:22ch; }
+  .roomhead .drop { flex-shrink:1; overflow:hidden; }
+
+  .transcript { flex:1; overflow-y:auto; padding:18px 20px; }
+  .msg { margin-bottom:14px; max-width:min(760px,92%); }
+  .who { font-size:11px; margin-bottom:3px; letter-spacing:.04em; }
+  .msg.user .who { color:var(--user); }
+  .msg.agent .who { color:var(--accent); }
+  .bubble {
+    padding:9px 12px; border-radius:8px; background:var(--panel);
+    border:1px solid var(--line); white-space:pre-wrap; word-break:break-word;
+  }
+  .msg.user .bubble { border-left:2px solid var(--user); }
+  .msg.agent .bubble { border-left:2px solid var(--accent); }
+  .sys { color:var(--faint); font-size:11px; margin:8px 0; }
+  .sys.err { color:var(--bad); }
+
+  /* Raw view. Every chunk is rendered as it arrives and hidden with CSS, so
+     toggling never re-subscribes or re-renders — there is no state to get
+     wrong and no race with the stream. */
+  .rawline {
+    display:none; font-size:11px; color:var(--dim); margin:3px 0;
+    white-space:pre-wrap; word-break:break-all;
+    border-left:2px solid var(--line); padding-left:8px;
+  }
+  .rawline .k { color:var(--accent); }
+  .showraw .rawline { display:block; }
+  .showraw .msg.agent { display:none; }
+  .cursor::after {
+    content:'▍'; color:var(--accent);
+    animation:blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50%{opacity:0} }
+
+  .composer {
+    border-top:1px solid var(--line); padding:12px 16px;
+    display:flex; gap:10px; align-items:center; background:var(--panel);
+  }
+  input[type=text] {
+    font:inherit; padding:8px 11px; border-radius:6px;
+    border:1px solid var(--line); background:var(--bg); color:var(--fg);
+  }
+  #who { width:110px; }
+  #text { flex:1; }
+  input:focus { outline:none; border-color:var(--accent); }
+
+  .empty {
+    flex:1; display:flex; flex-direction:column; gap:8px;
+    align-items:center; justify-content:center; color:var(--faint);
+  }
+  .queue { color:var(--warn); font-size:11px; }
+  pre.check {
+    margin:6px 0 0; padding:8px; font-size:11px; line-height:1.45;
+    background:var(--bg); border:1px solid var(--line); border-radius:6px;
+    color:var(--dim); white-space:pre-wrap; max-height:190px; overflow:auto;
+  }
+  .hint { color:var(--faint); font-size:11px; margin-top:6px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">ORYXA</span>
+  <span class="tag">many people, many agents, one room</span>
+  <span class="spacer"></span>
+  <span class="tag"><span id="srvdot" class="dot unknown"></span> <span id="srvtxt">connecting</span></span>
+</header>
+
+<main>
+  <aside>
+    <h2>Agents</h2>
+    <div id="agents"></div>
+    <div class="hint">click to add to the room — pick several and they all answer</div>
+    <pre class="check" id="checkout" style="display:none"></pre>
+
+    <h2>Sessions</h2>
+    <div id="sessions"></div>
+    <div style="margin-top:10px"><button id="newbtn" disabled>+ new session</button></div>
+    <div class="hint">open this page twice with different names to see it as two people</div>
+  </aside>
+
+  <section class="room">
+    <div class="roomhead" id="roomhead" style="display:none">
+      <span><span class="k">session</span> <span class="v" id="rsid"></span></span>
+      <span class="drop"><span class="k">in the room</span> <span class="v" id="ragent"></span></span>
+      <span class="spacer"></span>
+      <button class="mini" id="rawbtn" title="show every chunk exactly as the agent sent it">raw</button>
+      <span class="v" id="rstate"></span>
+      <span class="queue" id="rqueue"></span>
+    </div>
+
+    <div class="transcript" id="transcript">
+      <div class="empty" id="empty">
+        <div>no room open</div>
+        <div style="font-size:12px">pick one or more agents, then <b>+ new session</b></div>
+      </div>
+    </div>
+
+    <div class="composer" id="composer" style="display:none">
+      <input type="text" id="who" placeholder="your name" />
+      <input type="text" id="text" placeholder="say something to the room…" />
+      <button id="send">send</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = (p, opt) => fetch(p, opt).then(async r => {
+  const t = await r.text();
+  let b = null; try { b = t ? JSON.parse(t) : null; } catch { b = { raw: t }; }
+  if (!r.ok) throw Object.assign(new Error((b && b.error) || r.statusText), { body: b });
+  return b;
+});
+
+let agents = [], sessions = [], selAgents = new Set(), selSession = null;
+let es = null, lastSeq = 0, roomAgents = [];
+const turns = new Map();   // turn id -> {author, text, out, el, done}
+const seenGroups = new Set();  // one rendered question per fan-out group
+
+// Your name is per-tab and sticky, so two windows are two people.
+$('#who').value = localStorage.getItem('oryxa.who') ||
+  ['alice','bob','carol','dave'][Math.floor(Math.random()*4)];
+$('#who').onchange = () => localStorage.setItem('oryxa.who', $('#who').value);
+
+// Re-rendering a list that has not changed destroys focus and selection while
+// someone is using it, so both lists only redraw when their contents differ.
+let sigAgents = '', sigSessions = '';
+
+async function poll() {
+  try {
+    const [a, s] = await Promise.all([api('/v1/agents'), api('/v1/sessions')]);
+    const next = a.agents || [];
+    // Carry check results across polls; the server does not store them.
+    const checks = new Map(agents.map(x => [x.name, x.__check]));
+    for (const x of next) if (checks.has(x.name)) x.__check = checks.get(x.name);
+    agents = next;
+    sessions = s.sessions || [];
+
+    $('#srvdot').className = 'dot ok'; $('#srvtxt').textContent = 'connected';
+
+    const sa = JSON.stringify(agents.map(x => [x.name, x.__check, selAgents.has(x.name)]));
+    if (sa !== sigAgents) { sigAgents = sa; renderAgents(); }
+    const ss = JSON.stringify(sessions.map(x => [x.id, x.state, x.agent]));
+    if (ss !== sigSessions) { sigSessions = ss; renderSessions(); }
+  } catch {
+    $('#srvdot').className = 'dot bad'; $('#srvtxt').textContent = 'server unreachable';
+  }
+}
+
+function renderAgents() {
+  const el = $('#agents');
+  if (!agents.length) { el.innerHTML = '<div class="hint">no connectors loaded</div>'; return; }
+  el.innerHTML = '';
+  for (const a of agents) {
+    const on = selAgents.has(a.name);
+    const d = document.createElement('button');
+    d.type = 'button';
+    d.className = 'row' + (on ? ' sel' : '');
+    const st = a.__check === undefined ? 'unknown' : (a.__check ? 'ok' : 'bad');
+    d.setAttribute('aria-pressed', on ? 'true' : 'false');
+    d.setAttribute('aria-label',
+      `agent ${a.name}, ${on ? 'in the room' : 'not in the room'}, ` +
+      `${st === 'unknown' ? 'not checked' : st === 'ok' ? 'healthy' : 'failing'}`);
+    d.innerHTML = `<span class="dot ${st}"></span>
+      <span class="tick">${on ? '✓' : ''}</span>
+      <span class="name">${esc(a.name)}</span>
+      <span class="meta">${(a.capabilities||[]).includes('stream') ? 'stream' : ''}</span>`;
+    d.onclick = () => toggleAgent(a.name);
+    el.appendChild(d);
+  }
+}
+
+function toggleAgent(name) {
+  selAgents.has(name) ? selAgents.delete(name) : selAgents.add(name);
+  $('#newbtn').disabled = selAgents.size === 0;
+  $('#newbtn').textContent = selAgents.size > 1
+    ? `+ room with ${selAgents.size} agents` : '+ new session';
+  sigAgents = ''; renderAgents();
+  if (selAgents.has(name)) checkAgent(name);
+}
+
+async function checkAgent(name) {
+  sigAgents = ''; renderAgents();
+  const out = $('#checkout');
+  out.style.display = 'block'; out.textContent = `checking ${name}…`;
+  try {
+    const r = await api(`/v1/agents/${name}/check`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ probe: 'ping from the oryxa viewer' })
+    });
+    mark(name, r.ok); out.textContent = summarise(r);
+  } catch (e) {
+    mark(name, false);
+    out.textContent = (e.body ? summarise(e.body) : String(e.message));
+  }
+}
+
+function mark(name, ok) {
+  const a = agents.find(x => x.name === name); if (a) a.__check = ok;
+  sigAgents = ''; renderAgents();
+}
+
+function summarise(r) {
+  const L = [];
+  L.push(`${r.ok ? 'OK' : 'FAILED'}  ${r.agent}`);
+  L.push(`reachable   ${r.reachable ? 'yes' : 'no'}`);
+  if (r.open) L.push(`open        ${r.open.ok ? 'ok  ' + (r.open.handle||'') : 'FAILED ' + (r.open.error||'')}`);
+  if (r.turn) {
+    L.push(`turn        ${r.turn.ok ? 'ok' : 'FAILED'}  ${r.turn.ms}ms  ${r.turn.parts} parts  ${r.turn.text_len} chars`);
+    if (r.turn.sample) L.push(`sample      ${r.turn.sample}`);
+    if (r.turn.error) L.push(`error       ${r.turn.error}`);
+  }
+  if (r.error) L.push(`error       ${r.error}`);
+  for (const w of (r.warnings||[])) L.push(`warning     ${w}`);
+  return L.join('\n');
+}
+
+function renderSessions() {
+  const el = $('#sessions');
+  if (!sessions.length) { el.innerHTML = '<div class="hint">none yet</div>'; return; }
+  el.innerHTML = '';
+  for (const s of sessions) {
+    const d = document.createElement('button');
+    d.type = 'button';
+    d.className = 'row' + (selSession === s.id ? ' sel' : '');
+    const st = s.state === 'running' ? 'busy' : s.state === 'closed' ? 'unknown' : 'ok';
+    d.setAttribute('aria-label', `session ${s.id}, agent ${s.agent}, ${s.state}`);
+    d.innerHTML = `<span class="dot ${st}"></span>
+      <span class="name">${esc(s.id.slice(0,10))}</span>
+      <span class="meta">${esc(s.agent)}</span>`;
+    d.onclick = () => openSession(s.id);
+    el.appendChild(d);
+  }
+}
+
+$('#newbtn').onclick = async () => {
+  if (!selAgents.size) return;
+  const s = await api('/v1/sessions', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ agents: [...selAgents] })
+  });
+  await poll(); openSession(s.id);
+};
+
+async function openSession(id) {
+  selSession = id; lastSeq = 0; turns.clear(); seenGroups.clear();
+  $('#empty').style.display = 'none';
+  $('#roomhead').style.display = 'flex';
+  $('#composer').style.display = 'flex';
+  $('#transcript').innerHTML = '';
+  $('#rsid').textContent = id;
+  renderSessions();
+
+  const v = await api('/v1/sessions/' + id);
+  roomAgents = v.agents || [v.agent];
+  $('#ragent').textContent = roomAgents.join(' · ');
+  $('#rstate').textContent = v.state;
+
+  if (es) es.close();
+  // Replay from the beginning, then follow. Same code path either way.
+  es = new EventSource(`/v1/sessions/${id}/stream?since=0`);
+  es.onmessage = e => { try { onEvent(JSON.parse(e.data)); } catch {} };
+  es.onerror = () => { $('#srvdot').className = 'dot bad'; };
+}
+
+function onEvent(ev) {
+  if (ev.seq <= lastSeq) return;
+  lastSeq = ev.seq;
+  const d = ev.data || {};
+
+  switch (ev.kind) {
+    case 'session.created':
+      sys(`session opened · agent ${d.agent}`); break;
+    case 'session.opened':
+      break;   // per-agent handle; the header lists who is in the room instead
+    case 'input.submitted':
+      // One input creates a turn per agent; render the question once.
+      if (d.group && seenGroups.has(d.group)) { turns.set(ev.turn, {author: ev.actor}); break; }
+      if (d.group) seenGroups.add(d.group);
+      addUser(ev.turn, ev.actor, d.text, d.position); break;
+    case 'input.withdrawn':
+      sys('input withdrawn'); break;
+    case 'turn.started':
+      $('#rstate').textContent = 'running';
+      startAgent(ev.turn, d.agent || ev.actor); break;
+    case 'output.part':
+      rawLine(d);
+      if (d.kind === 'text') appendAgent(ev.turn, d.text);
+      else if (d.kind === 'error') sys('agent error: ' + (d.text||''), true);
+      break;
+    case 'turn.finished':
+      $('#rstate').textContent = 'idle'; $('#rqueue').textContent = '';
+      endAgent(ev.turn); break;
+    case 'turn.failed':
+      $('#rstate').textContent = 'idle';
+      endAgent(ev.turn);
+      sys(`${ev.actor || 'agent'} failed: ` + (d.error||''), true); break;
+    case 'turn.cancelled':
+      $('#rstate').textContent = 'idle'; endAgent(ev.turn); sys('turn cancelled'); break;
+    case 'session.closed':
+      $('#rstate').textContent = 'closed'; sys('session closed'); break;
+  }
+  scroll();
+}
+
+function addUser(turnId, who, text, position) {
+  const m = document.createElement('div');
+  m.className = 'msg user';
+  m.innerHTML = `<div class="who">${esc(who||'someone')}</div>
+                 <div class="bubble">${esc(text||'')}</div>`;
+  $('#transcript').appendChild(m);
+  turns.set(turnId, { author: who, el: null, out: '' });
+  if (position > 1) $('#rqueue').textContent = `${position-1} waiting`;
+}
+
+function startAgent(turnId, agent) {
+  const t = turns.get(turnId) || {};
+  const m = document.createElement('div');
+  m.className = 'msg agent';
+  m.innerHTML = `<div class="who">${esc(agent || 'agent')}</div>
+                 <div class="bubble cursor"></div>`;
+  $('#transcript').appendChild(m);
+  t.el = m.querySelector('.bubble'); t.out = '';
+  turns.set(turnId, t);
+}
+
+function appendAgent(turnId, text) {
+  const t = turns.get(turnId); if (!t || !t.el) return;
+  t.out += text || '';
+  t.el.textContent = t.out;
+  t.el.classList.add('cursor');
+}
+
+function endAgent(turnId) {
+  const t = turns.get(turnId); if (!t || !t.el) return;
+  t.el.classList.remove('cursor');
+  if (!t.out) t.el.textContent = '(no text — check the connector selectors)';
+}
+
+// Oryxa records every chunk an agent emits, verbatim; the connector's `text:`
+// selector only decides what the default transcript shows. The raw view makes
+// that visible — nothing is discarded, and a connector picking the wrong field
+// is diagnosed by looking rather than guessing.
+$('#rawbtn').onclick = () => {
+  const on = $('#transcript').classList.toggle('showraw');
+  $('#rawbtn').style.borderColor = on ? 'var(--accent)' : '';
+  scroll();
+};
+
+function rawLine(d) {
+  const el = document.createElement('div');
+  el.className = 'rawline';
+  const body = d.raw !== undefined ? JSON.stringify(d.raw) : JSON.stringify(d);
+  el.innerHTML = `<span class="k">${esc(d.kind)}</span> ${esc(body)}`;
+  $('#transcript').appendChild(el);
+}
+
+function sys(text, bad) {
+  const d = document.createElement('div');
+  d.className = 'sys' + (bad ? ' err' : '');
+  d.textContent = '· ' + text;
+  $('#transcript').appendChild(d);
+}
+
+async function send() {
+  const text = $('#text').value.trim(); if (!text || !selSession) return;
+  const who = $('#who').value.trim() || 'anonymous';
+  localStorage.setItem('oryxa.who', who);
+  $('#text').value = '';
+  try {
+    await api(`/v1/sessions/${selSession}/input`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text, author: who })
+    });
+  } catch (e) { sys('could not send: ' + e.message, true); }
+}
+$('#send').onclick = send;
+$('#text').onkeydown = e => { if (e.key === 'Enter') send(); };
+
+function scroll() {
+  const t = $('#transcript');
+  if (t.scrollHeight - t.scrollTop - t.clientHeight < 160) t.scrollTop = t.scrollHeight;
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+poll(); setInterval(poll, 3000);
+</script>
+</body>
+</html>

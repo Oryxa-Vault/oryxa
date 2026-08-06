@@ -1,0 +1,34 @@
+# Works against `go run ./cmd/mockagent`. Streaming, with an open step.
+name: mock-sse
+base: http://localhost:9000
+timeout: 2m
+
+vars:
+  app: demo
+  user: oryxa
+
+capabilities: [stream, multi_turn]
+
+open:
+  method: POST
+  path: /apps/{{app}}/users/{{user}}/sessions/{{conversation}}
+  body: {}
+  capture:
+    handle: $.id
+
+turn:
+  method: POST
+  path: /run_sse
+  body:
+    app_name: "{{app}}"
+    user_id: "{{user}}"
+    session_id: "{{handle}}"
+    new_message:
+      role: user
+      parts:
+        - text: "{{input}}"
+  response:
+    format: sse
+    text:
+      - $.content.parts[*].text
+    done: $.turn_complete

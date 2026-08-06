@@ -1,0 +1,33 @@
+# Build output
+/oryxa
+/mockagent
+/dist/
+*.exe
+
+# Local state
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Connectors are configuration and may point at internal hosts or carry
+# credentials in headers. The templates and verified examples are tracked
+# explicitly; anything else a user drops in is theirs.
+/connectors/*
+!/connectors/templates/
+!/connectors/mock-*.yaml
+!/connectors/langgraph.yaml
+!/connectors/adk.yaml
+!/connectors/pydanticai.yaml
+!/connectors/crewai.yaml
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      # The session loop is concurrent and hands snapshots to HTTP handlers, so
+      # the race detector is the test that matters most here.
+      - name: test
+        run: go test -race -count=1 ./...
+
+      # The core must never branch on which framework it is talking to.
+      #
+      # Comments are exempt on purpose: several of them name a framework to
+      # explain why a feature exists (ADK's thought flag, AG-UI's typed events),
+      # and that reasoning is worth keeping. Tests are exempt because their
+      # fixtures replay real payloads. What must stay clean is executable code.
+      - name: no framework names in core code
+        run: |
+          fail=0
+          for f in $(find internal cmd -name '*.go' ! -name '*_test.go'); do
+            hits=$(sed -e 's://.*::' "$f" | grep -inE "langgraph|crewai|pydantic|ag-ui|\badk\b" || true)
+            if [ -n "$hits" ]; then
+              echo "$hits" | sed "s|^|$f:|"
+              fail=1
+            fi
+          done
+          if [ "$fail" = 1 ]; then
+            echo "framework name in core code; that belongs in a connector"
+            exit 1
+          fi
+          echo "core is framework-agnostic"
+
+      # LoadDir validates every file in the directory, so one call per directory
+      # covers all of them. A malformed file reports "loading connectors:";
+      # anything else means they all parsed.
+      - name: every shipped connector and template parses
+        run: |
+          for dir in connectors connectors/templates; do
+            out=$(go run ./cmd/oryxa check __none__ -connectors "$dir" 2>&1 || true)
+            case "$out" in
+              *"loading connectors:"*) echo "$out"; exit 1 ;;
+              *) echo "  $dir parsed: $(echo "$out" | grep -o 'available: .*' || echo ok)" ;;
+            esac
+          done

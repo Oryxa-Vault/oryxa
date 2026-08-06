@@ -1,0 +1,42 @@
+# STARTING POINT — not yet verified against a running LangGraph server.
+#
+# Written from LangGraph's documented Assistants/Threads/Runs surface. The
+# stream shape varies with stream_mode, so expect to adjust `text`. Run
+# `oryxa check langgraph` and read the sample it returns.
+#
+#   langgraph dev             # python default http://localhost:2024
+#
+name: langgraph
+base: http://localhost:2024
+timeout: 5m
+
+vars:
+  assistant: agent          # assistant id or graph name
+
+capabilities: [stream, multi_turn]
+
+open:
+  method: POST
+  path: /threads
+  body:
+    metadata:
+      oryxa_session: "{{conversation}}"
+  capture:
+    handle: $.thread_id
+
+turn:
+  method: POST
+  path: /threads/{{handle}}/runs/stream
+  body:
+    assistant_id: "{{assistant}}"
+    stream_mode: messages-tuple
+    input:
+      messages:
+        - role: user
+          content: "{{input}}"
+  response:
+    format: sse
+    text:
+      - $[0].content
+      - $.messages[*].content
+      - $.content

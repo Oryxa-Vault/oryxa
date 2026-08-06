@@ -1,0 +1,43 @@
+# STARTING POINT — not yet verified against a running ADK server.
+#
+# Written from ADK's documented api_server surface. Run `oryxa check adk` once
+# your agent is up: it will tell you whether the selectors match the real
+# payloads, which is faster than reading docs.
+#
+#   adk api_server            # default http://localhost:8000
+#
+name: adk
+base: http://localhost:8000
+timeout: 5m
+
+vars:
+  app: echo_agent     # the directory name ADK serves
+  user: oryxa             # ADK assumes one user per session; Oryxa takes that slot
+
+capabilities: [stream, multi_turn]
+
+open:
+  method: POST
+  path: /apps/{{app}}/users/{{user}}/sessions/{{conversation}}
+  body: {}
+  capture:
+    handle: $.id
+
+turn:
+  method: POST
+  path: /run_sse
+  body:
+    app_name: "{{app}}"
+    user_id: "{{user}}"
+    session_id: "{{handle}}"
+    new_message:
+      role: user
+      parts:
+        - text: "{{input}}"
+    streaming: true
+  response:
+    format: sse
+    when: $.partial          # deltas only; the final aggregated event repeats them
+    text:
+      - $.content.parts[!thought].text
+    error: $.error_message

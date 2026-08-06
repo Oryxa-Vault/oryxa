@@ -1,0 +1,38 @@
+# AG-UI — a protocol template, not a framework one.
+#
+# Works with any agent speaking AG-UI, whatever built it. Verified against a
+# real AG-UI runtime with tools: tool calls, state deltas and lifecycle events
+# all arrive as opaque activity, and only TEXT_MESSAGE_CONTENT becomes the answer.
+#
+# AG-UI keeps reasoning in its own event type rather than a flag on a part, so
+# separating thinking from answer is a `when:` equality rather than a selector
+# predicate.
+name: agui
+base: http://localhost:8001
+timeout: 5m
+
+capabilities: [stream, multi_turn]
+
+# No open step: AG-UI carries the conversation as threadId on every request,
+# and {{handle}} falls back to the Oryxa session id.
+
+turn:
+  method: POST
+  path: /ag-ui # some servers mount this at /
+  body:
+    threadId: "{{handle}}"
+    runId: "{{turn}}" # must be unique per turn
+    state: {}
+    messages:
+      - id: "{{turn}}"
+        role: user
+        content: "{{input}}"
+    tools: []
+    context: []
+    forwardedProps: {}
+  response:
+    format: sse
+    when: $.type == TEXT_MESSAGE_CONTENT # not REASONING_MESSAGE_CONTENT
+    text:
+      - $.delta
+    error: $.message # RUN_ERROR carries the reason here

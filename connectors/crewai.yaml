@@ -1,0 +1,39 @@
+# CrewAI behind FastAPI — verified against a running server.
+#
+# A crew is multi-agent by design: one turn here becomes several LLM calls
+# between the crew's own agents. Oryxa sees one turn and one result, which is
+# the point — their orchestration stays theirs.
+#
+# No streaming: CrewAI's kickoff returns a finished result, so this uses the
+# plain json path. `stream` is absent from capabilities and the viewer will say
+# so rather than pretending.
+#
+# Verified on crewai 1.15.11: a normal crew honours the LLM object you give it —
+# pointing OPENAI_BASE_URL at a dead host changes nothing. With planning=True it
+# does not: the planner ignores the crew's LLM and falls back to OPENAI_* env
+# vars. Pass planning_llm explicitly if you enable planning.
+name: crewai
+base: http://localhost:5002
+timeout: 5m # a crew runs several model calls per turn
+
+capabilities: [multi_turn]
+
+open:
+  method: POST
+  path: /open
+  body:
+    conversation: "{{conversation}}"
+  capture:
+    handle: $.conversation
+
+turn:
+  method: POST
+  path: /run
+  body:
+    input: "{{input}}"
+    conversation: "{{handle}}"
+  response:
+    format: json
+    text:
+      - $.output
+    error: $.error

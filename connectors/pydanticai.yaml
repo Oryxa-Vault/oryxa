@@ -1,0 +1,30 @@
+# Pydantic AI behind FastAPI — verified against a running server.
+#
+# The framework ships no HTTP server, so this is the shape most agents actually
+# have: a framework wrapped in whatever web layer the team already uses. It uses
+# the generic-http path, no template of its own.
+name: pydanticai
+base: http://localhost:5001
+timeout: 3m
+
+capabilities: [stream, multi_turn]
+
+open:
+  method: POST
+  path: /open
+  body:
+    conversation: "{{conversation}}"
+  capture:
+    handle: $.conversation
+
+turn:
+  method: POST
+  path: /stream
+  body:
+    input: "{{input}}"
+    conversation: "{{handle}}"
+  response:
+    format: sse
+    text:
+      - $.delta
+    done: $.done
