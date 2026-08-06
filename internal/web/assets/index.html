@@ -142,6 +142,21 @@
     color:var(--dim); white-space:pre-wrap; max-height:190px; overflow:auto;
   }
   .hint { color:var(--faint); font-size:11px; margin-top:6px; }
+
+  /* Sign-in. Shown only when the server is running with a token. */
+  #signin {
+    position:fixed; inset:0; display:none; z-index:10;
+    align-items:center; justify-content:center; background:var(--bg);
+  }
+  #signin .box {
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:26px 28px; width:min(380px,90vw);
+  }
+  #signin h3 { margin:0 0 4px; font-size:14px; font-weight:600; }
+  #signin p { margin:0 0 16px; color:var(--faint); font-size:12px; }
+  #signin .r { display:flex; gap:8px; }
+  #signin input { flex:1; }
+  #signerr { color:var(--bad); font-size:11px; margin-top:10px; min-height:14px; }
 </style>
 </head>
 <body>
@@ -151,6 +166,18 @@
   <span class="spacer"></span>
   <span class="tag"><span id="srvdot" class="dot unknown"></span> <span id="srvtxt">connecting</span></span>
 </header>
+
+<div id="signin">
+  <div class="box">
+    <h3>This Oryxa needs a token</h3>
+    <p>The server was started with <code>-token</code>. Paste it to continue.</p>
+    <div class="r">
+      <input type="password" id="tokeninput" placeholder="token" autocomplete="current-password" />
+      <button id="signbtn">enter</button>
+    </div>
+    <div id="signerr"></div>
+  </div>
+</div>
 
 <main>
   <aside>
@@ -473,7 +500,48 @@ function esc(s) {
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-poll(); setInterval(poll, 3000);
+// Auth. The token is exchanged for a cookie rather than kept in JS, because
+// EventSource cannot send an Authorization header — the streams need the cookie
+// regardless, so there is no reason to hold the token anywhere else.
+async function start() {
+  let status;
+  try {
+    status = await api('/v1/auth/status');
+  } catch {
+    $('#srvdot').className = 'dot bad';
+    $('#srvtxt').textContent = 'server unreachable';
+    return;
+  }
+  if (status.mode === 'token' && !status.authed) {
+    $('#signin').style.display = 'flex';
+    $('#tokeninput').focus();
+    return;
+  }
+  $('#signin').style.display = 'none';
+  poll();
+  setInterval(poll, 3000);
+}
+
+async function signIn() {
+  const token = $('#tokeninput').value.trim();
+  if (!token) return;
+  $('#signerr').textContent = '';
+  try {
+    await api('/v1/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token })
+    });
+    $('#tokeninput').value = '';
+    start();
+  } catch (e) {
+    $('#signerr').textContent = e.message === 'Unauthorized'
+      ? 'That token was not accepted.' : (e.message || 'Sign-in failed.');
+  }
+}
+$('#signbtn').onclick = signIn;
+$('#tokeninput').onkeydown = e => { if (e.key === 'Enter') signIn(); };
+
+start();
 </script>
 </body>
 </html>

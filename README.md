@@ -121,6 +121,39 @@ oryxa launch window    the same, and opens a browser
 oryxa check <agent>    probe a connector with a real turn; no server needed
 ```
 
+## Running it for real
+
+Two flags separate a demo from something you can leave running:
+
+```bash
+oryxa serve \
+  -db    'postgres://user:pass@host:5432/oryxa?sslmode=disable' \
+  -token "$(openssl rand -hex 32)"
+```
+
+**`-db`** makes the event log durable. Sessions are a fold over that log, so a
+restart replays them — history, agents and all — rather than losing them.
+Without it the log is in-memory and the server says so at startup.
+
+```
+  ├─ store       postgres — postgres://oryxa:****@127.0.0.1:5432/oryxa
+  ├─ auth        shared token
+     recovered 3 session(s) from the log
+```
+
+A turn that was *running* when the process died is marked interrupted rather than
+re-run: the agent may well have finished it, and doing the work twice is worse
+than saying the outcome is unknown. Turns that were only queued are re-queued.
+
+**`-token`** guards the API. Send it as `Authorization: Bearer <token>`, or sign
+in through the viewer — which exchanges it for an HttpOnly cookie, because
+`EventSource` cannot set headers and the live stream needs to authenticate too.
+Without it, anyone who can reach the port has full access, and the server says
+that at startup as well.
+
+Both default to off so the two-minute quickstart stays two minutes. Neither
+should be off anywhere else.
+
 ## Endpoints
 
 ```
@@ -191,8 +224,8 @@ go test -race ./...
 ## Not built yet
 
 Shared context (`log` / `state` regions, OCC), the collaboration tool
-(`post` / `ask` / `read` / `write`), presence, persistence (the event store is
-in-memory behind an interface), auth.
+(`post` / `ask` / `read` / `write`), presence, per-person identity (the token is
+shared, so the log records who *said* they were alice, not who they are).
 
 Design docs are in `design/`; [`PLAN.md`](PLAN.md) is the source of truth.
 

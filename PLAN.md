@@ -68,6 +68,17 @@ features. `?since=` serves all of them.
 **Viewer.** Embedded in the binary. Live transcript, agent health, a raw view
 showing every chunk exactly as the agent sent it.
 
+**Persistence.** Postgres event log behind the same `events.Store` interface.
+Restart replays sessions from it — history, agents and per-agent handles — because
+a session was already a fold over its events. A turn that was *running* when the
+process died is marked interrupted rather than re-run: the agent may have finished
+it, and doing the work twice is worse than admitting the outcome is unknown.
+
+**Auth.** One shared token, constant-time compared. `Authorization: Bearer` for
+clients; the viewer exchanges it for an HttpOnly cookie because `EventSource`
+cannot set headers and the stream needs authenticating too. Off by default, and
+the server says so at startup.
+
 **CLI.** `serve`, `launch window`, `check`.
 
 ### Verified against real servers and a real model
@@ -93,12 +104,11 @@ answer), and one agent failing without taking the room down.
 | **Shared context** | `log` / `state` regions with optimistic concurrency — designed in [08-sessions-context.md](design/08-sessions-context.md), not implemented |
 | **Collaboration tool** | `post` / `ask` / `read` / `write` — the agent talking back to the room mid-turn |
 | **Presence** | who is here, who is typing |
-| **Persistence** | the event store is in-memory behind an interface; SQLite drops in without touching handlers |
-| **Auth** | none; fine on localhost, nowhere else |
+| **Per-person identity** | the API token is shared, so the log records who *said* they were alice, not who they are |
 | **Cancel** | in the spec and the session API, no connector declares it and it is unexercised end to end |
 
-Nothing above is blocked. Persistence and auth are what stand between this and
-running somewhere real.
+Per-person identity is the one that matters next: attribution is the point of the
+log, and a shared token means it records a claim rather than a fact.
 
 ---
 
@@ -138,10 +148,17 @@ Questions this project actually answered, rather than guessed:
 
 ## 7. Next
 
-1. **Persistence** — SQLite behind the existing `events.Store`.
-2. **Shared context** — regions and OCC, per [08](design/08-sessions-context.md).
-3. **Collaboration tool** — `post` and `ask` make the room conversational.
-4. **Auth** — session-scoped tokens.
+1. **Shared context** — regions and OCC, per [08](design/08-sessions-context.md).
+2. **Collaboration tool** — `post` and `ask` make the room conversational.
+3. **Per-person identity** — so the log records who acted, not who claimed to.
+
+**Not next: NATS.** It would fan events across processes, but sessions are
+stateful — one goroutine per session *is* the serialization point, so two
+instances subscribed to the same subject would both try to run the same turn.
+NATS is a transport; it does not decide who owns a session. The order is session
+ownership first, then NATS for scale-out and external consumers. The fan-out is
+already isolated behind one type, so it drops in without rework when there is a
+problem for it to solve.
 
 ---
 

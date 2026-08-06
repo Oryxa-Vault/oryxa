@@ -8,12 +8,30 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    # The postgres store is the durability guarantee; testing it against a real
+    # server is the only way that guarantee means anything.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: oryxa
+          POSTGRES_PASSWORD: oryxa
+          POSTGRES_DB: oryxa
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U oryxa"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      ORYXA_TEST_DATABASE_URL: postgres://oryxa:oryxa@127.0.0.1:5432/oryxa?sslmode=disable
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           cache: true
 
       - name: gofmt

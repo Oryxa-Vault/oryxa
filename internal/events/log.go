@@ -2,7 +2,8 @@
 //
 // Late join, reconnect, replay and audit are all the same operation here —
 // read from a sequence number, then subscribe. That is the whole reason the log
-// is the source of truth rather than a side effect.
+// is the source of truth rather than a side effect, and why restart recovery is
+// rehydration rather than separate machinery.
 package events
 
 import (
@@ -21,39 +22,108 @@ type Event struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
-// Store is the seam SQLite drops into later. Handlers never touch anything else.
+// Store is the log. Append returns an error because a durable implementation
+// can fail, and an append-only log that silently drops writes is worse than one
+// that stops: replay, audit and recovery all quietly become wrong.
 type Store interface {
-	Append(sessionID, kind, actor, turn string, data any) Event
-	Since(sessionID string, since int64) []Event
+	Append(sessionID, kind, actor, turn string, data any) (Event, error)
+	Since(sessionID string, since int64) ([]Event, error)
 	Subscribe(sessionID string) (<-chan Event, func())
+
+	// Sessions lists every session the store knows about, oldest first. Used to
+	// rehydrate after a restart.
+	Sessions() ([]string, error)
+	Close() error
 }
 
-type memLog struct {
-	mu       sync.RWMutex
-	bySess   map[string][]Event
-	seq      map[string]int64
-	subs     map[string]map[chan Event]struct{}
-	capacity int
+func encode(data any) (json.RawMessage, error) {
+	if data == nil {
+		return nil, nil
+	}
+	return json.Marshal(data)
 }
 
-func NewMemory() Store {
-	return &memLog{
-		bySess:   map[string][]Event{},
-		seq:      map[string]int64{},
-		subs:     map[string]map[chan Event]struct{}{},
-		capacity: 64,
+// fanout is the in-process subscriber set, shared by every implementation.
+// Cross-process fan-out (NATS, LISTEN/NOTIFY) would wrap this rather than
+// replace it: subscribers are local either way.
+type fanout struct {
+	mu   sync.Mutex
+	subs map[string]map[chan Event]struct{}
+	cap  int
+}
+
+func newFanout() *fanout {
+	return &fanout{subs: map[string]map[chan Event]struct{}{}, cap: 64}
+}
+
+func (f *fanout) publish(ev Event) {
+	f.mu.Lock()
+	chans := make([]chan Event, 0, len(f.subs[ev.Session]))
+	for ch := range f.subs[ev.Session] {
+		chans = append(chans, ch)
+	}
+	f.mu.Unlock()
+
+	// A slow subscriber must not stall the turn loop. It drops frames and
+	// recovers with ?since= on reconnect, which the log already supports.
+	for _, ch := range chans {
+		select {
+		case ch <- ev:
+		default:
+		}
 	}
 }
 
-func (l *memLog) Append(sessionID, kind, actor, turn string, data any) Event {
-	var raw json.RawMessage
-	if data != nil {
-		if b, err := json.Marshal(data); err == nil {
-			raw = b
-		}
+func (f *fanout) subscribe(sessionID string) (<-chan Event, func()) {
+	ch := make(chan Event, f.cap)
+	f.mu.Lock()
+	if f.subs[sessionID] == nil {
+		f.subs[sessionID] = map[chan Event]struct{}{}
+	}
+	f.subs[sessionID][ch] = struct{}{}
+	f.mu.Unlock()
+
+	var once sync.Once
+	return ch, func() {
+		once.Do(func() {
+			f.mu.Lock()
+			delete(f.subs[sessionID], ch)
+			f.mu.Unlock()
+			close(ch)
+		})
+	}
+}
+
+// ---- in-memory ----
+
+type memLog struct {
+	mu     sync.RWMutex
+	bySess map[string][]Event
+	order  []string
+	seq    map[string]int64
+	fan    *fanout
+}
+
+// NewMemory returns a store that keeps everything in process. Nothing survives
+// a restart; use NewPostgres for anything you care about.
+func NewMemory() Store {
+	return &memLog{
+		bySess: map[string][]Event{},
+		seq:    map[string]int64{},
+		fan:    newFanout(),
+	}
+}
+
+func (l *memLog) Append(sessionID, kind, actor, turn string, data any) (Event, error) {
+	raw, err := encode(data)
+	if err != nil {
+		return Event{}, err
 	}
 
 	l.mu.Lock()
+	if _, seen := l.bySess[sessionID]; !seen {
+		l.order = append(l.order, sessionID)
+	}
 	l.seq[sessionID]++
 	ev := Event{
 		Seq:     l.seq[sessionID],
@@ -65,24 +135,13 @@ func (l *memLog) Append(sessionID, kind, actor, turn string, data any) Event {
 		Data:    raw,
 	}
 	l.bySess[sessionID] = append(l.bySess[sessionID], ev)
-	subs := make([]chan Event, 0, len(l.subs[sessionID]))
-	for ch := range l.subs[sessionID] {
-		subs = append(subs, ch)
-	}
 	l.mu.Unlock()
 
-	// A slow subscriber must not stall the turn loop. It drops frames and
-	// recovers with ?since= on reconnect, which the log already supports.
-	for _, ch := range subs {
-		select {
-		case ch <- ev:
-		default:
-		}
-	}
-	return ev
+	l.fan.publish(ev)
+	return ev, nil
 }
 
-func (l *memLog) Since(sessionID string, since int64) []Event {
+func (l *memLog) Since(sessionID string, since int64) ([]Event, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	all := l.bySess[sessionID]
@@ -92,25 +151,17 @@ func (l *memLog) Since(sessionID string, since int64) []Event {
 			out = append(out, e)
 		}
 	}
-	return out
+	return out, nil
 }
 
 func (l *memLog) Subscribe(sessionID string) (<-chan Event, func()) {
-	ch := make(chan Event, l.capacity)
-	l.mu.Lock()
-	if l.subs[sessionID] == nil {
-		l.subs[sessionID] = map[chan Event]struct{}{}
-	}
-	l.subs[sessionID][ch] = struct{}{}
-	l.mu.Unlock()
-
-	var once sync.Once
-	return ch, func() {
-		once.Do(func() {
-			l.mu.Lock()
-			delete(l.subs[sessionID], ch)
-			l.mu.Unlock()
-			close(ch)
-		})
-	}
+	return l.fan.subscribe(sessionID)
 }
+
+func (l *memLog) Sessions() ([]string, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return append([]string(nil), l.order...), nil
+}
+
+func (l *memLog) Close() error { return nil }

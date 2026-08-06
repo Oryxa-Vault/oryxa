@@ -18,14 +18,21 @@ import (
 )
 
 type Server struct {
-	reg  *connector.Registry
-	exec *connector.Executor
-	mgr  *session.Manager
-	log  events.Store
+	reg   *connector.Registry
+	exec  *connector.Executor
+	mgr   *session.Manager
+	log   events.Store
+	token string
 }
 
 func New(reg *connector.Registry, exec *connector.Executor, mgr *session.Manager, log events.Store) *Server {
 	return &Server{reg: reg, exec: exec, mgr: mgr, log: log}
+}
+
+// WithToken guards the API with a shared token. Empty leaves it open.
+func (s *Server) WithToken(token string) *Server {
+	s.token = token
+	return s
 }
 
 func (s *Server) Routes() http.Handler {
@@ -55,10 +62,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/sessions/{id}/events", s.getEvents)
 	mux.HandleFunc("GET /v1/sessions/{id}/stream", s.stream)
 
+	// Auth
+	mux.HandleFunc("POST /v1/auth/login", s.login)
+	mux.HandleFunc("GET /v1/auth/status", s.authStatus)
+
 	// Viewer, embedded in the binary so there is nothing extra to deploy.
 	mux.Handle("/", web.Handler())
 
-	return logging(mux)
+	return logging(s.requireAuth(mux))
 }
 
 // ---- agents ----
@@ -226,7 +237,12 @@ func (s *Server) getEvents(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, fmt.Errorf("session not found"))
 		return
 	}
-	writeJSON(w, 200, map[string]any{"events": s.log.Since(id, sinceParam(r))})
+	evs, err := s.log.Since(id, sinceParam(r))
+	if err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"events": evs})
 }
 
 // stream replays from ?since= then follows. Late join, reconnect and replay are
@@ -254,8 +270,15 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 
 	// Subscribe first, then backfill: the reverse order drops anything that
 	// lands between the two.
+	backfill, err := s.log.Since(id, sinceParam(r))
+	if err != nil {
+		// Headers are already sent, so report it in-band rather than as a status.
+		fmt.Fprintf(w, "data: {\"kind\":\"stream.error\",\"error\":%q}\n\n", err.Error())
+		flusher.Flush()
+		return
+	}
 	var last int64
-	for _, ev := range s.log.Since(id, sinceParam(r)) {
+	for _, ev := range backfill {
 		writeSSE(w, ev)
 		last = ev.Seq
 	}

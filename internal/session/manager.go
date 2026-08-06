@@ -14,8 +14,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -112,6 +114,9 @@ type Manager struct {
 	reg  *connector.Registry
 	exec *connector.Executor
 	log  events.Store
+
+	failMu         sync.Mutex
+	appendFailures int
 }
 
 func NewManager(reg *connector.Registry, exec *connector.Executor, log events.Store) *Manager {
@@ -157,11 +162,37 @@ func (m *Manager) Create(agents ...string) (Summary, error) {
 	m.sessions[s.id] = s
 	m.mu.Unlock()
 
-	m.log.Append(s.id, "session.created", "", "", map[string]any{
+	m.emit(s.id, "session.created", "", "", map[string]any{
 		"agent": list[0], "agents": list,
 	})
 	go m.loop(s)
 	return s.summary(), nil
+}
+
+// emit writes to the log. Appends are best-effort at the call site but never
+// silent: a durable store that starts failing must be visible, because replay,
+// audit and recovery are all reading what this wrote.
+func (m *Manager) emit(sessionID, kind, actor, turn string, data any) {
+	if _, err := m.log.Append(sessionID, kind, actor, turn, data); err != nil {
+		m.logFailure(sessionID, kind, err)
+	}
+}
+
+func (m *Manager) logFailure(sessionID, kind string, err error) {
+	m.failMu.Lock()
+	m.appendFailures++
+	n := m.appendFailures
+	m.failMu.Unlock()
+	fmt.Fprintf(os.Stderr, "oryxa: event append failed (session=%s kind=%s, %d total): %v\n",
+		sessionID, kind, n, err)
+}
+
+// AppendFailures reports how many log writes have failed. Non-zero means the
+// session history on disk is incomplete.
+func (m *Manager) AppendFailures() int {
+	m.failMu.Lock()
+	defer m.failMu.Unlock()
+	return m.appendFailures
 }
 
 func (m *Manager) get(id string) (*session, bool) {
@@ -248,7 +279,7 @@ func (m *Manager) Submit(id, author, text string) (Turn, error) {
 	s.mu.Unlock()
 
 	for _, t := range made {
-		m.log.Append(s.id, "input.submitted", author, t.ID, map[string]any{
+		m.emit(s.id, "input.submitted", author, t.ID, map[string]any{
 			"text": text, "position": pos, "agent": t.Agent, "group": group,
 		})
 	}
@@ -268,7 +299,7 @@ func (m *Manager) Withdraw(id, turnID, actor string) error {
 		if t.ID == turnID {
 			s.queue = append(s.queue[:i], s.queue[i+1:]...)
 			s.mu.Unlock()
-			m.log.Append(s.id, "input.withdrawn", actor, turnID, nil)
+			m.emit(s.id, "input.withdrawn", actor, turnID, nil)
 			return nil
 		}
 	}
@@ -288,7 +319,7 @@ func (m *Manager) Cancel(id, actor string) error {
 		return ErrNoTurn
 	}
 	cancel()
-	m.log.Append(s.id, "turn.cancel_requested", actor, "", nil)
+	m.emit(s.id, "turn.cancel_requested", actor, "", nil)
 	return nil
 }
 
@@ -308,7 +339,7 @@ func (m *Manager) Close(id, actor string) error {
 	}
 	close(s.closed)
 	s.mu.Unlock()
-	m.log.Append(s.id, "session.closed", actor, "", nil)
+	m.emit(s.id, "session.closed", actor, "", nil)
 	return nil
 }
 
@@ -377,7 +408,7 @@ func (m *Manager) run(s *session, t *Turn) {
 	spec, ok := m.reg.Get(agent)
 	if !ok {
 		s.finish(t, TurnFailed, "agent no longer registered: "+agent, "")
-		m.log.Append(s.id, "turn.failed", agent, t.ID, map[string]string{"error": "agent no longer registered"})
+		m.emit(s.id, "turn.failed", agent, t.ID, map[string]string{"error": "agent no longer registered"})
 		return
 	}
 
@@ -397,7 +428,7 @@ func (m *Manager) run(s *session, t *Turn) {
 		s.mu.Unlock()
 	}()
 
-	m.log.Append(s.id, "turn.started", author, t.ID, map[string]string{
+	m.emit(s.id, "turn.started", author, t.ID, map[string]string{
 		"text": text, "agent": agent,
 	})
 
@@ -416,7 +447,7 @@ func (m *Manager) run(s *session, t *Turn) {
 		h, caps, err := m.exec.Open(ctx, spec, tc)
 		if err != nil {
 			s.finish(t, TurnFailed, err.Error(), "")
-			m.log.Append(s.id, "turn.failed", agent, t.ID, map[string]string{"error": err.Error()})
+			m.emit(s.id, "turn.failed", agent, t.ID, map[string]string{"error": err.Error()})
 			return
 		}
 		s.mu.Lock()
@@ -432,7 +463,7 @@ func (m *Manager) run(s *session, t *Turn) {
 		s.mu.Unlock()
 
 		tc.Handle, tc.Captures = h, captures
-		m.log.Append(s.id, "session.opened", agent, t.ID, map[string]string{
+		m.emit(s.id, "session.opened", agent, t.ID, map[string]string{
 			"handle": h, "agent": agent,
 		})
 	}
@@ -442,21 +473,21 @@ func (m *Manager) run(s *session, t *Turn) {
 		if p.Kind == "text" {
 			out = append(out, p.Text...)
 		}
-		m.log.Append(s.id, "output.part", agent, t.ID, p)
+		m.emit(s.id, "output.part", agent, t.ID, p)
 	})
 
 	switch {
 	case err != nil && ctx.Err() != nil:
 		s.finish(t, TurnCancelled, "cancelled", "")
-		m.log.Append(s.id, "turn.cancelled", agent, t.ID, nil)
+		m.emit(s.id, "turn.cancelled", agent, t.ID, nil)
 	case err != nil:
 		// One agent failing must not take the room down: the other turns in
 		// this group still run.
 		s.finish(t, TurnFailed, err.Error(), "")
-		m.log.Append(s.id, "turn.failed", agent, t.ID, map[string]string{"error": err.Error()})
+		m.emit(s.id, "turn.failed", agent, t.ID, map[string]string{"error": err.Error()})
 	default:
 		s.finish(t, TurnDone, "", string(out))
-		m.log.Append(s.id, "turn.finished", agent, t.ID, map[string]any{"chars": len(out)})
+		m.emit(s.id, "turn.finished", agent, t.ID, map[string]any{"chars": len(out)})
 	}
 }
 
@@ -488,4 +519,157 @@ func randHex(n int) string {
 		return hex.EncodeToString([]byte(time.Now().Format("150405.000000")))
 	}
 	return hex.EncodeToString(b)
+}
+
+// ---- restart recovery ----
+
+// Rehydrate rebuilds sessions from the log. Because a session is a fold over
+// its events, recovery is a replay rather than a separate persistence path —
+// which is the payoff of making the log the source of truth.
+//
+// Turns are treated by what the log last said about them:
+//
+//	queued        never started, so it is safe to run now — re-queued
+//	running       outcome unknown: the agent may well have finished after we
+//	              died. Re-running risks doing the work twice, so it is marked
+//	              interrupted instead. Guessing quietly is the one option that
+//	              would be wrong either way.
+//	done/failed   left as history
+func (m *Manager) Rehydrate() (int, error) {
+	ids, err := m.log.Sessions()
+	if err != nil {
+		return 0, fmt.Errorf("list sessions: %w", err)
+	}
+	n := 0
+	for _, id := range ids {
+		evs, err := m.log.Since(id, 0)
+		if err != nil {
+			return n, fmt.Errorf("read %s: %w", id, err)
+		}
+		if s := rebuild(id, evs); s != nil {
+			m.mu.Lock()
+			m.sessions[id] = s
+			m.mu.Unlock()
+			if s.state != StateClosed {
+				go m.loop(s)
+				s.nudge() // anything re-queued starts immediately
+			}
+			n++
+		}
+	}
+	return n, nil
+}
+
+func rebuild(id string, evs []events.Event) *session {
+	if len(evs) == 0 {
+		return nil
+	}
+	s := &session{
+		id:       id,
+		state:    StateIdle,
+		handles:  map[string]string{},
+		captures: map[string]map[string]string{},
+		opened:   map[string]bool{},
+		wake:     make(chan struct{}, 1),
+		closed:   make(chan struct{}),
+	}
+	turns := map[string]*Turn{}
+	var order []string
+
+	for _, ev := range evs {
+		var d struct {
+			Agent  string   `json:"agent"`
+			Agents []string `json:"agents"`
+			Handle string   `json:"handle"`
+			Text   string   `json:"text"`
+			Group  string   `json:"group"`
+			Error  string   `json:"error"`
+			Kind   string   `json:"kind"`
+			Part   string   `json:"text_part"`
+		}
+		if len(ev.Data) > 0 {
+			_ = json.Unmarshal(ev.Data, &d)
+		}
+
+		switch ev.Kind {
+		case "session.created":
+			s.created = ev.TS
+			if len(d.Agents) > 0 {
+				s.agents = d.Agents
+			} else if d.Agent != "" {
+				s.agents = []string{d.Agent}
+			}
+		case "session.opened":
+			if d.Agent != "" {
+				s.handles[d.Agent] = d.Handle
+				s.opened[d.Agent] = true
+			}
+		case "session.closed":
+			s.state = StateClosed
+		case "input.submitted":
+			if _, seen := turns[ev.Turn]; seen {
+				continue
+			}
+			t := &Turn{
+				ID: ev.Turn, Agent: d.Agent, Author: ev.Actor,
+				Text: d.Text, State: TurnQueued, Group: d.Group,
+			}
+			turns[ev.Turn] = t
+			order = append(order, ev.Turn)
+		case "input.withdrawn":
+			delete(turns, ev.Turn)
+		case "turn.started":
+			if t := turns[ev.Turn]; t != nil {
+				t.State = TurnRunning
+			}
+		case "output.part":
+			// Rebuild the answer from the text parts already recorded, so a
+			// completed turn reads the same after a restart as before it.
+			if t := turns[ev.Turn]; t != nil && d.Kind == "text" {
+				var p struct {
+					Kind string `json:"kind"`
+					Text string `json:"text"`
+				}
+				if json.Unmarshal(ev.Data, &p) == nil && p.Kind == "text" {
+					t.Output += p.Text
+				}
+			}
+		case "turn.finished":
+			if t := turns[ev.Turn]; t != nil {
+				t.State = TurnDone
+			}
+		case "turn.failed":
+			if t := turns[ev.Turn]; t != nil {
+				t.State, t.Error = TurnFailed, d.Error
+			}
+		case "turn.cancelled":
+			if t := turns[ev.Turn]; t != nil {
+				t.State = TurnCancelled
+			}
+		}
+	}
+
+	if s.created.IsZero() {
+		s.created = evs[0].TS
+	}
+	for _, tid := range order {
+		t := turns[tid]
+		if t == nil {
+			continue
+		}
+		switch t.State {
+		case TurnQueued:
+			s.queue = append(s.queue, t)
+		case TurnRunning:
+			t.State = TurnFailed
+			t.Error = "interrupted by restart; outcome unknown"
+			s.history = append(s.history, t)
+		default:
+			s.history = append(s.history, t)
+		}
+	}
+	if s.state == StateClosed {
+		close(s.closed)
+	}
+	return s
 }

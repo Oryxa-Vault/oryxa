@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -48,8 +49,10 @@ func usage() {
 	fmt.Print(`oryxa — many people, one agent
 
 Usage:
-  oryxa serve [-addr :8080] [-connectors ./connectors]
-      Start the server. API and viewer on the same port.
+  oryxa serve [-addr :8080] [-connectors ./connectors] [-db DSN] [-token TOKEN]
+      Start the server. API and viewer on the same port. Without -db the event
+      log is in-memory and nothing survives a restart. Without -token the API is
+      open to anyone who can reach the port.
 
   oryxa launch window [-addr :8080] [-connectors ./connectors]
       Start the server and open the viewer in a browser.
@@ -66,6 +69,10 @@ func serve(args []string, openWindow bool) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", ":8080", "listen address")
 	dir := fs.String("connectors", "./connectors", "directory of connector files")
+	dsn := fs.String("db", os.Getenv("ORYXA_DATABASE_URL"),
+		"postgres DSN; in-memory if empty (nothing survives a restart)")
+	token := fs.String("token", os.Getenv("ORYXA_TOKEN"),
+		"shared token guarding the API; open to anyone who can reach the port if empty")
 	_ = fs.Parse(args)
 
 	reg := connector.NewRegistry()
@@ -75,10 +82,23 @@ func serve(args []string, openWindow bool) {
 		os.Exit(1)
 	}
 
-	log := events.NewMemory()
+	log, storeKind, err := openStore(*dsn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "store: %v\n", err)
+		os.Exit(1)
+	}
+	defer log.Close()
+
 	exec := connector.NewExecutor()
 	mgr := session.NewManager(reg, exec, log)
-	srv := api.New(reg, exec, mgr, log)
+
+	recovered, err := mgr.Rehydrate()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "rehydrate: %v\n", err)
+		os.Exit(1)
+	}
+
+	srv := api.New(reg, exec, mgr, log).WithToken(*token)
 
 	httpSrv := &http.Server{
 		Addr:              *addr,
@@ -91,7 +111,16 @@ func serve(args []string, openWindow bool) {
 	fmt.Printf("\n  oryxa\n")
 	fmt.Printf("  ├─ viewer      %s\n", url)
 	fmt.Printf("  ├─ api         %s/v1\n", url)
+	fmt.Printf("  ├─ store       %s\n", storeKind)
+	if *token == "" {
+		fmt.Printf("  ├─ auth        none — anyone who can reach %s has full access\n", *addr)
+	} else {
+		fmt.Printf("  ├─ auth        shared token\n")
+	}
 	fmt.Printf("  └─ connectors  %d loaded from %s\n\n", n, *dir)
+	if recovered > 0 {
+		fmt.Printf("     recovered %d session(s) from the log\n\n", recovered)
+	}
 	for _, s := range reg.List() {
 		fmt.Printf("     • %-14s %s\n", s.Name, s.Base)
 	}
@@ -114,6 +143,37 @@ func serve(args []string, openWindow bool) {
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// openStore picks the durable store when a DSN is given and says so plainly
+// when it does not: an in-memory log looks identical until the process dies.
+func openStore(dsn string) (events.Store, string, error) {
+	if strings.TrimSpace(dsn) == "" {
+		return events.NewMemory(), "in-memory (not durable — set -db for postgres)", nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	store, err := events.NewPostgres(ctx, dsn)
+	if err != nil {
+		return nil, "", err
+	}
+	return store, "postgres — " + redactDSN(dsn), nil
+}
+
+// redactDSN keeps the host and database visible and the password out of logs.
+func redactDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "configured"
+	}
+	if u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			u.User = url.UserPassword(u.User.Username(), "****")
+		}
+	}
+	u.RawQuery = ""
+	return u.String()
 }
 
 func launch(args []string) {
