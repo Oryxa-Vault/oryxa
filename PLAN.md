@@ -142,8 +142,9 @@ answer), and one agent failing without taking the room down.
 | **Read scoping** | one token opens every session; there is no participant concept anywhere. This is what makes the framework laptop-safe rather than deployable, and it is now the largest gap. |
 | **Mid-turn writes** | rules apply when a turn finishes. An agent that wants to publish a finding *while* still working would need a callback — `{{callback_url}}` exists in the template context but nothing populates it yet. |
 | **Presence** | who is here, who is typing |
+| **Context rollup** | the render bound keeps a list's newest 20 items and says how many it dropped. Nothing merges, deduplicates or summarises what falls off, so a long room's early findings simply stop reaching prompts. Summarising would have to be a logged event carrying its own output — a summary cannot be recomputed on replay, so recomputing it would give a different room after every restart. |
 
-Read scoping is the one that blocks real use. The other two are additive.
+Read scoping is the one that blocks real use. The other three are additive.
 
 Cancel is no longer unexercised: `TestCancelledTurnWritesNothing` drives it end
 to end. What remains untested is the capability path, where the agent is told to

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
@@ -59,4 +60,36 @@ func asConflict(err error, c **sharedctx.Conflict) bool {
 		*c = x
 	}
 	return ok
+}
+
+// A version held for a key that was never written is still a stale write. It
+// reads as an update, and answering it with a create would tell the caller its
+// update landed when the thing it believed it was updating never existed.
+func TestVersionForAKeyThatNeverExistedConflicts(t *testing.T) {
+	m, _ := setup(t, spec("a", newAgent(t, replies("ok"))))
+	id := room(t, m, "a")
+
+	_, err := m.SetContext(id, "plan", "alice", "ship friday", 7)
+	var conflict *sharedctx.Conflict
+	if !errors.As(err, &conflict) {
+		t.Fatalf("err = %v, want a conflict", err)
+	}
+	if conflict.Version != 0 {
+		t.Fatalf("conflict reports version %d, want 0 for a key with no history", conflict.Version)
+	}
+	noEntry(t, m, id, "plan")
+}
+
+// Zero still means "create if absent", which is how a first write is made
+// without the caller having to know the key is new.
+func TestZeroVersionStillCreates(t *testing.T) {
+	m, _ := setup(t, spec("a", newAgent(t, replies("ok"))))
+	id := room(t, m, "a")
+
+	if _, err := m.SetContext(id, "plan", "alice", "ship friday", 0); err != nil {
+		t.Fatalf("first write with ifMatch=0: %v", err)
+	}
+	if got := entry(t, m, id, "plan").Value; got != "ship friday" {
+		t.Fatalf("plan = %q", got)
+	}
 }

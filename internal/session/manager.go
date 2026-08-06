@@ -823,13 +823,25 @@ func (m *Manager) SetContext(id, key, by, value string, ifMatch int64) (sharedct
 
 	// Check the precondition before writing an event: a refused write must not
 	// leave a record claiming it happened.
-	if cur, exists := s.ctx.Get(key); exists && ifMatch != -1 && cur.Version != ifMatch {
+	//
+	// Both halves matter. A version that does not match the current one is the
+	// obvious conflict; a version held for a key that was never written is the
+	// quiet one, and creating the entry anyway would tell a caller its update
+	// succeeded when what it believed it was updating never existed.
+	cur, exists := s.ctx.Get(key)
+	switch {
+	case exists && ifMatch != -1 && cur.Version != ifMatch:
 		m.emit(s.id, "conflict.rejected", by, "", map[string]any{
 			"key": key, "expected": ifMatch, "current": cur.Version,
 		})
 		return sharedctx.Entry{}, &sharedctx.Conflict{
 			Key: key, Current: cur.Value, Version: cur.Version, By: cur.By,
 		}
+	case !exists && ifMatch > 0:
+		m.emit(s.id, "conflict.rejected", by, "", map[string]any{
+			"key": key, "expected": ifMatch, "current": 0,
+		})
+		return sharedctx.Entry{}, &sharedctx.Conflict{Key: key, Version: 0}
 	}
 
 	ev, err := m.log.Append(s.id, "context.set", by, "", map[string]any{

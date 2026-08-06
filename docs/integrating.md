@@ -264,6 +264,15 @@ context:
     pin: true
 ```
 
+**`kind: value` with `from: $text` drifts.** It is allowed, and it is right when
+an agent has exactly one job — whatever it last said is the current answer. But
+`$text` captures the *whole* answer, so when the question changes the answer's
+nature, the entry follows and its name stops describing its contents. A planner
+asked "what should we do?" writes a plan; asked "write the status line" the same
+rule overwrites `plan` with a status line, and asked "what was the error rate?"
+overwrites it with a number. A selector pins the rule to one field and cannot
+drift, which is why `$.output.plan` is the example above and `$text` is not.
+
 Three things worth knowing:
 
 - **Context is snapshotted when a turn starts.** Another agent finishing

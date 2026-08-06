@@ -44,6 +44,11 @@ context:
   # value entry holds one current answer instead of a growing list, so the room
   # stays the same size no matter how long the room runs.
   #
+  # Use a selector rather than $text here. `kind: value` with `from: $text`
+  # overwrites the entry with the whole of whatever the agent last said, so when
+  # the question changes the answer's nature the entry follows it — a key named
+  # `plan` ends up holding a status line, then a number. A selector cannot drift.
+  #
   # `when` matters for streaming agents: without it, every prefix of the answer
   # gets written on its way to being complete.
   #

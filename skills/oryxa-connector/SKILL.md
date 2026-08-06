@@ -110,6 +110,10 @@ Rules to keep in mind when writing one:
   text, so it always works — but it appends a whole answer every turn. Once you
   know which part other agents actually need, move that part to a `value` rule
   with a selector and the room stops growing.
+- **`kind: value` with `from: $text` drifts.** Allowed, and correct for an agent
+  with one job. But `$text` captures the whole answer, so when the question
+  changes the answer's nature the entry follows: a `plan` key overwritten by a
+  status line, then by a number. A selector cannot drift.
 
 A failed or cancelled turn writes nothing. Context is snapshotted at turn start,
 so parallel agents do not rewrite each other's questions.
