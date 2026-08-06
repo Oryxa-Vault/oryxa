@@ -125,10 +125,14 @@ An append entry renders its newest 20 items and tells the model when it left
 older ones out (`- (6 earlier items not shown)`). Nothing is deleted — the API
 and the log keep everything; only the prompt is trimmed.
 
-Each `turn.started` records what its agent was shown — `chars` for the growth
-curve, `elided` when a turn answered from a partial room. Check these first when
-an agent starts returning less than it should: a full model window fails quietly,
-not with an error.
+Each `turn.started` records what its agent was shown: `keys` (what the room
+held), `reads` (which bindings this template asked for), `chars` (what those cost
+this request), and `elided` (items left out of what it read). A connector that
+never mentions context is charged nothing, so `chars` is a real per-agent growth
+curve rather than the room's size repeated.
+
+Check these first when an agent starts returning less than it should: a full
+model window fails quietly, not with an error.
 
 `oryxa which <agent>` prints the rules a connector declares — the first thing to
 check when nothing is appearing in shared context.

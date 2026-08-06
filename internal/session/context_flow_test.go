@@ -906,3 +906,105 @@ func TestShortRoomRecordsNoElision(t *testing.T) {
 		t.Fatalf("short room marked as trimmed:\n%s", got)
 	}
 }
+
+// ---- charging a turn for what it read, not for what the room held ----
+
+// Every connector written before shared context existed reads none of it.
+// Quoting the room's size as their prompt size would make each of them look
+// like it was about to overrun a window it never touches.
+func TestConnectorThatIgnoresContextIsChargedNothing(t *testing.T) {
+	a := newAgent(t, replies("ok"))
+	m, log := setup(t, specTmpl("a", a, "{{input}}"))
+	id := room(t, m, "a")
+
+	if _, err := m.AppendContext(id, "findings", "alice", strings.Repeat("x", 500)); err != nil {
+		t.Fatal(err)
+	}
+	ask(t, m, id, "go", 1)
+
+	d := startedContext(t, log, id, 0)
+	if d.Chars != 0 || len(d.Reads) != 0 {
+		t.Fatalf("a connector reading no context was charged %+v", d)
+	}
+	// What the room held is a different question, and still answered.
+	if strings.Join(d.Keys, ",") != "findings" {
+		t.Fatalf("keys = %v, want the room's contents", d.Keys)
+	}
+}
+
+// The point of the curated set is that it stays cheap while the room grows. A
+// digest quoting the room's size could not show that, which is what made it
+// worth fixing.
+func TestPinnedReaderIsChargedForPinnedOnly(t *testing.T) {
+	a := newAgent(t, replies("ok"))
+	m, log := setup(t, specTmpl("a", a, "{{context.pinned}}\n---\n{{input}}"))
+	id := room(t, m, "a")
+
+	if _, err := m.AppendContext(id, "findings", "alice", strings.Repeat("x", 500)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SetContext(id, "decision", "alice", "hold the release", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.PinContext(id, "decision", "alice", true); err != nil {
+		t.Fatal(err)
+	}
+	ask(t, m, id, "go", 1)
+
+	d := startedContext(t, log, id, 0)
+	if strings.Join(d.Reads, ",") != "context.pinned" {
+		t.Fatalf("reads = %v, want the pinned binding", d.Reads)
+	}
+	rendered, _, _ := strings.Cut(a.prompt(t, 0), "\n---\n")
+	if d.Chars != len(rendered) {
+		t.Fatalf("charged %d, prompt carried %d:\n%q", d.Chars, len(rendered), rendered)
+	}
+	if d.Chars >= 500 {
+		t.Fatalf("charged %d, which can only include the unpinned findings", d.Chars)
+	}
+}
+
+func TestSingleKeyReaderIsChargedForThatKey(t *testing.T) {
+	a := newAgent(t, replies("ok"))
+	m, log := setup(t, specTmpl("a", a, "{{context.findings}}\n---\n{{input}}"))
+	id := room(t, m, "a")
+
+	if _, err := m.AppendContext(id, "findings", "alice", "the api is rate limited"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SetContext(id, "noise", "alice", strings.Repeat("y", 400), 0); err != nil {
+		t.Fatal(err)
+	}
+	ask(t, m, id, "go", 1)
+
+	d := startedContext(t, log, id, 0)
+	rendered, _, _ := strings.Cut(a.prompt(t, 0), "\n---\n")
+	if d.Chars != len(rendered) || d.Chars >= 400 {
+		t.Fatalf("charged %d for a single key, prompt carried %d", d.Chars, len(rendered))
+	}
+}
+
+// Elision follows what was read: a pinned-only reader is not warned about items
+// trimmed from a list it never saw.
+func TestElisionFollowsWhatWasRead(t *testing.T) {
+	a := newAgent(t, replies("ok"))
+	m, log := setup(t, specTmpl("a", a, "{{context.pinned}}\n---\n{{input}}"))
+	id := room(t, m, "a")
+
+	for i := 0; i < sharedctx.MaxItemsPerEntry+9; i++ {
+		if _, err := m.AppendContext(id, "findings", "alice", fmt.Sprintf("f%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := m.SetContext(id, "decision", "alice", "hold", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.PinContext(id, "decision", "alice", true); err != nil {
+		t.Fatal(err)
+	}
+	ask(t, m, id, "go", 1)
+
+	if d := startedContext(t, log, id, 0); d.Elided != 0 {
+		t.Fatalf("elided=%d for a reader that never saw the trimmed list", d.Elided)
+	}
+}

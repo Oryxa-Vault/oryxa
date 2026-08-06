@@ -329,11 +329,23 @@ history depended on when the server last came up would not be a history.
 Each `turn.started` event records what its agent was actually shown:
 
 ```json
-{"agent": "writer", "context": {"version": 279, "keys": ["findings"], "chars": 240, "elided": 6}}
+{"agent": "reporter", "context": {
+  "version": 279, "keys": ["findings", "plan"],
+  "reads": ["context.pinned"], "chars": 31
+}}
 ```
 
-`chars` is the growth curve — plot it to see the wall before you hit it.
-`elided` is the warning that a turn answered from a partial room.
+`keys` is what the room held; `reads` is which bindings this connector's template
+asked for, and `chars` is what those cost the request. They are separate numbers
+because most connectors read none of the room — quoting the room's size as their
+prompt size would make every one of them look about to overrun a window it never
+touches. Above, the room holds findings and a plan, but the reporter reads only
+the pinned set, so it is charged 31 characters rather than the room's full size.
+
+`chars` is the growth curve — plot it per agent to see the wall before you hit
+it, and to see that a pinned-only reader stays flat while the room grows.
+`elided` warns that a turn answered from a partial room, and follows what was
+read: a reader that never saw a trimmed list is not warned about it.
 
 ### Capabilities
 

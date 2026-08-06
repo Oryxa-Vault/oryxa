@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"sort"
 	"strings"
 	"testing"
 )
@@ -191,5 +192,71 @@ context:
 	r := s.Context[1]
 	if r.Kind != "value" || r.From != "$.output.plan" || r.When != "$.done" || !r.Pin {
 		t.Fatalf("rule 1 parsed as %+v", r)
+	}
+}
+
+// ---- what a template will actually ask the room for ----
+
+func TestContextRefsFindsEveryBinding(t *testing.T) {
+	s := &Step{
+		Path:    "/threads/{{handle}}/runs",
+		Headers: map[string]string{"X-Room": "{{context.plan}}"},
+		Body: map[string]any{
+			"system": "{{context.pinned}}",
+			"messages": []any{
+				map[string]any{"content": "{{context}} then {{context.findings}}"},
+			},
+			"unrelated": "{{input}}",
+		},
+	}
+	got := s.ContextRefs()
+	sort.Strings(got)
+	want := "context,context.findings,context.pinned,context.plan"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("refs = %q, want %q", strings.Join(got, ","), want)
+	}
+}
+
+// The case that matters most: every connector shipped before shared context
+// existed reads none of it, and must be charged for none of it.
+func TestContextRefsIgnoresATemplateThatNeverMentionsIt(t *testing.T) {
+	s := &Step{
+		Path: "/run/{{handle}}",
+		Body: map[string]any{"message": "{{input}}", "app": "{{vars.app}}"},
+	}
+	if got := s.ContextRefs(); len(got) != 0 {
+		t.Fatalf("refs = %v, want none", got)
+	}
+}
+
+// A template that splices the room in twice pays for it twice.
+func TestContextRefsCountsRepeats(t *testing.T) {
+	s := &Step{Body: map[string]any{"a": "{{context}}", "b": "{{context}}"}}
+	if got := s.ContextRefs(); len(got) != 2 {
+		t.Fatalf("refs = %v, want two", got)
+	}
+}
+
+func TestNilStepReadsNothing(t *testing.T) {
+	var s *Step
+	if got := s.ContextRefs(); got != nil {
+		t.Fatalf("refs = %v, want nil", got)
+	}
+}
+
+// ContextRefs reads the spec while Render walks the request; if they disagreed
+// about where a template can appear, the digest would miss one.
+func TestContextRefsWalksWhereRenderWalks(t *testing.T) {
+	body := map[string]any{
+		"nested": []any{map[string]any{"deep": "{{context.findings}}"}},
+	}
+	s := &Step{Body: body}
+	if got := s.ContextRefs(); len(got) != 1 {
+		t.Fatalf("refs = %v, want the nested reference", got)
+	}
+	out := viewCtx().Render(body).(map[string]any)
+	deep := out["nested"].([]any)[0].(map[string]any)["deep"].(string)
+	if strings.Contains(deep, "{{") {
+		t.Fatalf("Render left the nested reference unsubstituted: %q", deep)
 	}
 }

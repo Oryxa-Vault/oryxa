@@ -94,6 +94,82 @@ func (c Ctx) lookup(name string) (string, bool) {
 	return "", false
 }
 
+// ContextRefs reports every {{context...}} reference in a step's templates, in
+// the order they appear and including repeats, so a caller can tell how much of
+// the room this step will actually put in a request.
+//
+// Reading the template rather than watching the render is exact here: nothing
+// substitutes recursively, so a reference either appears in the spec or cannot
+// appear in the request. It is also answerable before the request is built,
+// which is what lets turn.started describe the prompt it is announcing.
+//
+// A nil step reads nothing, which is the honest answer for a connector that
+// never mentions context: not "the room was empty" but "this one does not look".
+func (s *Step) ContextRefs() []string {
+	if s == nil {
+		return nil
+	}
+	var out []string
+	collect := func(str string) {
+		for _, name := range refsIn(str) {
+			if name == "context" || strings.HasPrefix(name, "context.") {
+				out = append(out, name)
+			}
+		}
+	}
+	collect(s.Path)
+	for k, v := range s.Headers {
+		collect(k)
+		collect(v)
+	}
+	walkStrings(s.Body, collect)
+	return out
+}
+
+// walkStrings visits every string in a decoded JSON/YAML value, mirroring what
+// Render walks so the two cannot disagree about where templates can appear.
+func walkStrings(v any, fn func(string)) {
+	switch t := v.(type) {
+	case string:
+		fn(t)
+	case map[string]any:
+		for k, val := range t {
+			fn(k)
+			walkStrings(val, fn)
+		}
+	case map[any]any:
+		for k, val := range t {
+			if ks, ok := k.(string); ok {
+				fn(ks)
+			}
+			walkStrings(val, fn)
+		}
+	case []any:
+		for _, val := range t {
+			walkStrings(val, fn)
+		}
+	}
+}
+
+// refsIn lists the {{name}} references in s, using the same scan as
+// RenderString so what is counted is exactly what would be substituted.
+func refsIn(s string) []string {
+	var out []string
+	for {
+		i := strings.Index(s, "{{")
+		if i < 0 {
+			return out
+		}
+		j := strings.Index(s[i:], "}}")
+		if j < 0 {
+			return out
+		}
+		j += i
+		out = append(out, strings.TrimSpace(s[i+2:j]))
+		s = s[j+2:]
+	}
+}
+
 // RenderString substitutes every {{name}} in s. Unknown names are left as-is so
 // a typo shows up in the request instead of vanishing.
 func (c Ctx) RenderString(s string) string {

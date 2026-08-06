@@ -489,7 +489,7 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 	// the agent is handed, which is exactly the discrepancy this is here to rule
 	// out: the log records every part an agent sends back, and until now nothing
 	// recorded what it was shown.
-	view, seen := contextSnapshot(s.ctx)
+	view, seen := contextSnapshot(s.ctx, spec.Turn.ContextRefs())
 
 	m.emit(s.id, "turn.started", author, t.ID, map[string]any{
 		"text": text, "agent": agent, "context": seen,

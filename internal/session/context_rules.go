@@ -33,12 +33,19 @@ import (
 // Chars is what that context costs the prompt. It is the number worth watching:
 // an agent that starts returning nothing is usually a room that outgrew the
 // model's window, and without this the log gives no warning that it happened.
-// Elided is how many items the room held but the prompt left out. Zero is the
+// Keys is what the room held. Reads is which of it this connector's template
+// actually asked for, and Chars is what those reads cost the request — the two
+// are separate because most connectors read none of the room, and reporting the
+// room's size as their prompt size would make every one of them look like it was
+// about to overrun a window it never touches.
+//
+// Elided is how many items were left out of what was rendered. Zero is the
 // normal case; anything else means this turn answered from a partial room, which
 // is worth knowing before trusting what it said.
 type contextDigest struct {
 	Version int64    `json:"version"`
 	Keys    []string `json:"keys,omitempty"`
+	Reads   []string `json:"reads,omitempty"`
 	Chars   int      `json:"chars"`
 	Elided  int      `json:"elided,omitempty"`
 }
@@ -52,14 +59,18 @@ type contextDigest struct {
 //
 // The digest comes from that same snapshot rather than a second read, so what
 // the log says the agent saw and what the agent was actually given cannot drift.
-func contextSnapshot(st *sharedctx.Store) (connector.ContextView, contextDigest) {
+// refs is what the connector's turn template references, which is what decides
+// how much of the snapshot becomes a request.
+func contextSnapshot(st *sharedctx.Store, refs []string) (connector.ContextView, contextDigest) {
 	entries := st.Snapshot()
 	keys := make(map[string]string, len(entries))
+	byKey := make(map[string]sharedctx.Entry, len(entries))
 	names := make([]string, 0, len(entries))
 	var pinned []sharedctx.Entry
 	var version int64
 	for _, e := range entries {
 		keys[e.Key] = sharedctx.RenderEntry(e)
+		byKey[e.Key] = e
 		names = append(names, e.Key)
 		if e.Version > version {
 			version = e.Version
@@ -73,12 +84,28 @@ func contextSnapshot(st *sharedctx.Store) (connector.ContextView, contextDigest)
 		Pinned: sharedctx.Render(pinned),
 		Keys:   keys,
 	}
-	return view, contextDigest{
-		Version: version,
-		Keys:    names,
-		Chars:   len(view.All),
-		Elided:  sharedctx.Elided(entries),
+
+	// Cost is charged per reference, not per distinct binding: a template that
+	// splices the room in twice pays for it twice, and the number is here to say
+	// what the request weighs.
+	d := contextDigest{Version: version, Keys: names, Reads: refs}
+	for _, ref := range refs {
+		switch {
+		case ref == "context":
+			d.Chars += len(view.All)
+			d.Elided += sharedctx.Elided(entries)
+		case ref == "context.pinned":
+			d.Chars += len(view.Pinned)
+			d.Elided += sharedctx.Elided(pinned)
+		default:
+			key := strings.TrimPrefix(ref, "context.")
+			d.Chars += len(keys[key])
+			if e, ok := byKey[key]; ok {
+				d.Elided += sharedctx.Elided([]sharedctx.Entry{e})
+			}
+		}
 	}
+	return view, d
 }
 
 // applyContextRules writes what an agent contributed back into the room.
