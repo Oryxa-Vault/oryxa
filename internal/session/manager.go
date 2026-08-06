@@ -322,10 +322,14 @@ func (m *Manager) Submit(id, author, text string) (Turn, error) {
 			ID: "t_" + randHex(6), Agent: a, Author: author,
 			Text: text, State: TurnQueued, Group: group,
 		}
-		pos := l.enqueue(t)
+		// Copy before enqueueing, not after. enqueue publishes the turn to the
+		// lane's goroutine, which marks it running under the lane lock the moment
+		// it picks it up — so an unlocked read afterwards races, and the value
+		// that loses is the one returned to the caller as their submit response.
 		if i == 0 {
 			first = *t
 		}
+		pos := l.enqueue(t)
 		m.emit(s.id, "input.submitted", author, t.ID, map[string]any{
 			"text": text, "position": pos, "agent": a, "group": group,
 		})
