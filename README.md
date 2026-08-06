@@ -10,6 +10,11 @@ where someone left off. That's the job.
 
 Status: **M1** — connectors, rooms (many people, many agents), event log, live stream, viewer.
 
+> **Run it locally, not on the open internet.** One token currently opens every
+> session and there is no participant concept, so anyone with the token can read
+> any room. Read scoping is the next thing being built — see
+> [SECURITY.md](SECURITY.md).
+
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.22%2B-00ADD8.svg)](go.mod)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
