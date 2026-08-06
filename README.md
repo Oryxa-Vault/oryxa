@@ -10,26 +10,33 @@ where someone left off. That's the job.
 
 Status: **M1** — connectors, rooms (many people, many agents), event log, live stream, viewer.
 
+[![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.22%2B-00ADD8.svg)](go.mod)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 ---
 
-## Try it in two minutes
+## Start here
 
 ```bash
-docker compose up -d               # oryxa + postgres
-go run ./cmd/mockagent &           # a stand-in agent on :9000
+docker compose up -d && go run ./cmd/mockagent &
 open http://localhost:8080
 ```
 
-Or without Docker:
+That's it — a running room with a stand-in agent. Pick the agent in the sidebar
+(clicking it runs a real probe turn and shows what came back), hit **+ new
+session**, and talk to it.
+
+No Docker:
 
 ```bash
-go build -o oryxa ./cmd/oryxa
-go run ./cmd/mockagent &
-./oryxa launch window              # server + viewer, opens a browser
+go build -o oryxa ./cmd/oryxa && go run ./cmd/mockagent &
+./oryxa launch window
 ```
 
-Pick an agent in the sidebar — clicking it runs a real probe turn and shows what
-came back. Then **+ new session**, and talk to it.
+**New here and want to help?** The most useful thing is a connector for a
+framework we haven't tested — that's one YAML file, no Go required. See
+[CONTRIBUTING.md](CONTRIBUTING.md); contributions are genuinely welcome.
 
 **To see it as two people:** open the viewer in a second tab and change the name
 in the composer. Both tabs are in the same room, watching the same agent.
@@ -392,4 +399,15 @@ participant concept, so this is laptop-safe rather than deployable. Presence
 
 Design docs are in `design/`; [`PLAN.md`](PLAN.md) is the source of truth.
 
-Apache 2.0.
+## Contributing
+
+Contributions are genuinely welcome, and small ones count. The highest-value
+thing is a connector for a framework we haven't tested — a single YAML file, no
+Go needed. [CONTRIBUTING.md](CONTRIBUTING.md) has the three-step version.
+
+If you tried Oryxa and got stuck, an issue saying where you got lost is worth
+real work to us: it tells us exactly where the docs are wrong.
+
+## Licence
+
+Copyright 2026 Oryxa. Licensed under the [Apache License 2.0](LICENSE).

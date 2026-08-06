@@ -1,25 +1,32 @@
 # Contributing
 
-The most useful thing you can contribute is **a connector for a framework we
-haven't tested**. That's a YAML file, and it makes Oryxa work for everyone using
-that framework.
+**Your contribution would genuinely be loved here.** Oryxa is early and the
+surface area is small, which means a first PR has a real chance of being the
+thing that makes it work for a framework nobody has tried yet.
 
-## Adding a connector
+Nothing is too small. A typo fix is a contribution. Telling us a connector
+didn't work for you is a contribution. Opening an issue that just says "I tried
+this and got lost here" is genuinely useful — it tells us where the docs lie.
 
-1. Start from the closest thing in [`connectors/templates/`](connectors/templates).
-2. Point it at your running agent and iterate with `oryxa check <name>` — it runs
-   a real turn and tells you what it found.
-3. When it's green with no warnings, open a PR with the file and a comment at the
-   top saying **which version you verified it against**.
+## The most useful thing you can do
 
-Read [docs/integrating.md](docs/integrating.md) first — the recipes cover
-streaming, conversations, reasoning models and typed-event protocols, and the
-symptom table covers most of what goes wrong.
+**Write a connector for a framework we haven't tested.** It's a YAML file — no Go
+required — and it makes Oryxa work for everyone using that framework.
 
-**Please don't submit a connector you haven't run.** A file that looks right but
-was never executed is worse than no file: it costs the next person an afternoon
-proving it wrong. Untested contributions get merged as templates, clearly marked
-unverified.
+1. Copy the closest file in [`connectors/templates/`](connectors/templates).
+2. Point it at your running agent and iterate with `oryxa check <name>`. It runs
+   a real turn and tells you what it actually got back.
+3. When it's green, open a PR with the file and a comment at the top saying
+   **which version you verified it against**.
+
+That's the whole process. [docs/integrating.md](docs/integrating.md) has the
+recipes if you get stuck — streaming, conversations, reasoning models,
+typed-event protocols — and a symptom table covering most of what goes wrong.
+
+One ask: **please run it before you send it.** A connector that looks right but
+was never executed costs the next person an afternoon proving it wrong. If you
+can't run it, send it anyway and say so in the PR — we'll merge it as a template
+marked unverified. That's still worth having.
 
 ## Working on the core
 
@@ -32,18 +39,18 @@ go vet ./... && gofmt -l .
 Two rules the codebase enforces on itself:
 
 **No framework names outside `connectors/`.** The core knows about `Connector`,
-never about ADK or LangGraph. `grep -ri "langgraph\|crewai\|adk" internal/` should
-return nothing.
+never about ADK or LangGraph. `grep -ri "langgraph\|crewai\|adk" internal/`
+should return nothing.
 
 **The log is append-only.** Never coalesce, dedupe or batch writes to it. Derived
-views may compact; the log may not. Every one of replay, late-join and audit
-breaks quietly if writes get optimised away.
+views may compact; the log may not. Replay, late-join and audit all break quietly
+if writes get optimised away.
 
 ## The lines we hold
 
 These aren't style preferences — they're what makes "works with any framework"
-true rather than aspirational. A change that crosses one of them will be asked to
-justify itself:
+true rather than aspirational. A change crossing one of them will be asked to
+justify itself, and that's a conversation worth having, not a rejection:
 
 - **We never look inside the agent.** Text is text; everything else is recorded
   whole as opaque activity and never interpreted.
@@ -62,7 +69,19 @@ command answers most of what anyone would ask you next.
 
 If the bug is "my agent's answer is wrong", check the **raw** view in the viewer
 first — it shows every chunk exactly as your agent sent it, which usually
-distinguishes a connector problem from an agent problem in seconds.
+separates a connector problem from an agent problem in seconds.
+
+## Pull requests
+
+- Branch from `main`, keep the PR focused on one thing.
+- `go test -race ./...` green before you open it.
+- Explain **why** in the description. The what is in the diff.
+- Draft PRs are welcome — open one early if you want a second opinion on an
+  approach before you finish it.
+
+We'd rather review a rough PR that's going somewhere than never see it. If
+you're unsure whether something fits, open an issue and ask — that costs you
+five minutes and can save you a weekend.
 
 ## Licence
 
