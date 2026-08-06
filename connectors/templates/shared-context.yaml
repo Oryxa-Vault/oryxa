@@ -1,0 +1,71 @@
+# Shared context: how an agent joins the room's thinking rather than just
+# answering into it.
+#
+# Copy this next to whichever transport template matches your agent (adk.yaml,
+# langgraph.yaml, agui.yaml, generic-http.yaml) and merge the two ideas: that
+# one describes how to reach the agent, this one describes what the agent reads
+# and leaves behind.
+#
+# Nothing here requires anything of the agent. No tool calling, no prompt
+# changes, no awareness that Oryxa exists.
+
+name: room-aware
+base: http://{{env.ORYXA_AGENT_HOST}}:8000
+
+turn:
+  path: /chat
+  body:
+    # Reading the room. {{context.pinned}} renders the curated set — the entries
+    # someone marked as still mattering — and is what you usually want, because
+    # it is the only one that does not grow with the length of the conversation.
+    #
+    # {{context}} renders everything instead. Use it while a room is short or
+    # while you are debugging one; swap to pinned before it gets long.
+    message: |
+      What the room knows so far:
+      {{context.pinned}}
+
+      {{input}}
+  response:
+    text: [$.reply]
+
+# Writing back to the room. Each rule is one thing this agent contributes.
+context:
+  # The simplest rule, and the right way to start: everything this agent says
+  # becomes a finding the others can read. `from: $text` works for every agent,
+  # because every agent produces text.
+  #
+  # It is the wrong place to stay. This appends a whole answer every turn, so
+  # the room grows with the conversation — see the note on size below.
+  - key: findings
+    from: $text
+
+  # What to move to once you know what this agent produces that others need. A
+  # value entry holds one current answer instead of a growing list, so the room
+  # stays the same size no matter how long the room runs.
+  #
+  # `when` matters for streaming agents: without it, every prefix of the answer
+  # gets written on its way to being complete.
+  #
+  # - key: hit_rate
+  #   kind: value
+  #   from: $.metrics.hit_rate
+  #   when: $.done
+  #   pin: true
+
+# Notes on behaviour worth knowing before you rely on it:
+#
+#   snapshot      context is read once, when the turn starts. Another agent
+#                 finishing mid-flight does not change the question this one
+#                 was asked.
+#   failure       a failed or cancelled turn writes nothing at all.
+#   attribution   entries are recorded as written by this connector's name, so
+#                 the log says which agent found what.
+#   conflicts     `append` cannot conflict, which is why it is the default.
+#                 `value` overwrites — the agent holds no version — but every
+#                 write stays in the event log.
+#   size          an append entry renders its newest 20 items and tells the model
+#                 when it left older ones out. Nothing is deleted: the API and
+#                 the log still hold all of it, only the prompt is trimmed.
+#                 Every turn.started records the chars and elided count its agent
+#                 saw, so growth is something you can watch rather than discover.

@@ -484,8 +484,15 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 		l.mu.Unlock()
 	}()
 
-	m.emit(s.id, "turn.started", author, t.ID, map[string]string{
-		"text": text, "agent": agent,
+	// Snapshot the room before announcing the turn, and report what it held.
+	// Reading it after the event would describe a different snapshot than the one
+	// the agent is handed, which is exactly the discrepancy this is here to rule
+	// out: the log records every part an agent sends back, and until now nothing
+	// recorded what it was shown.
+	view, seen := contextSnapshot(s.ctx)
+
+	m.emit(s.id, "turn.started", author, t.ID, map[string]any{
+		"text": text, "agent": agent, "context": seen,
 	})
 
 	tc := connector.Ctx{
@@ -495,6 +502,7 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 		Handle:       handle,
 		Vars:         spec.Vars,
 		Captures:     captures,
+		Context:      view,
 	}
 
 	// Open lazily, once per agent: an agent that is not running yet should fail
@@ -521,10 +529,19 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 		})
 	}
 
+	// Raw chunks are kept only when a rule actually selects into them. A long
+	// stream is a lot of JSON to hold for nothing, and the overwhelming majority
+	// of connectors declare no rules at all.
+	keepChunks := selectsFromPayload(spec)
+
 	var out []byte
+	var chunks []json.RawMessage
 	err := m.exec.Turn(ctx, spec, tc, func(p connector.Part) {
 		if p.Kind == "text" {
 			out = append(out, p.Text...)
+		}
+		if keepChunks && len(p.Raw) > 0 {
+			chunks = append(chunks, p.Raw)
 		}
 		m.emit(s.id, "output.part", agent, t.ID, p)
 	})
@@ -541,7 +558,19 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 	default:
 		finish(l, t, TurnDone, "", string(out))
 		m.emit(s.id, "turn.finished", agent, t.ID, map[string]any{"chars": len(out)})
+		// After turn.finished, so the log reads in the order things happened:
+		// the agent answered, and then the room changed because of it.
+		m.applyContextRules(s.id, spec, agent, string(out), chunks)
 	}
+}
+
+func selectsFromPayload(spec *connector.Spec) bool {
+	for _, r := range spec.Context {
+		if !r.FromText() {
+			return true
+		}
+	}
+	return false
 }
 
 // finish mutates the turn under its lane's lock, so a reader taking a snapshot

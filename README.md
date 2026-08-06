@@ -277,8 +277,29 @@ logic.
 Entries can be **pinned**: the small curated set meant to be put in front of an
 agent without swamping it.
 
-> Today context is people-facing — agents can't read or write it until the
-> collaboration tool (`post` / `ask` / `read` / `write`) lands.
+### Agents read it and write it
+
+Two lines in a connector, and the agent joins the room's thinking. It does not
+need tool calling, a prompt change, or any awareness that Oryxa exists.
+
+```yaml
+turn:
+  body:
+    message: "{{context}}\n\n{{input}}"   # reading: splice it into the prompt
+
+context:                                  # writing: what this agent leaves behind
+  - key: findings
+    from: $text
+```
+
+Now a researcher's findings are in front of the writer on its next turn, and
+neither knows the other is there. Rules take `kind: value` for state with one
+current answer, `when:` to gate streaming chunks, and `pin: true` for the
+curated set — see [docs/integrating.md](docs/integrating.md#shared-context).
+
+Context is snapshotted when a turn starts, so an agent finishing mid-flight
+never rewrites the question another was asked. A failed or cancelled turn writes
+nothing: half an answer recorded as a finding is worse than no finding.
 
 ## Docker
 
@@ -365,9 +386,9 @@ go test -race ./...
 
 ## Not built yet
 
-The collaboration tool (`post` / `ask` / `read` / `write`) — so agents can use
-shared context, not just people. Presence (who's here, who's typing). Event hash
-chaining and usage accounting.
+Read scoping — one token currently opens every session, and there is no
+participant concept, so this is laptop-safe rather than deployable. Presence
+(who's here, who's typing). Event hash chaining and usage accounting.
 
 Design docs are in `design/`; [`PLAN.md`](PLAN.md) is the source of truth.
 

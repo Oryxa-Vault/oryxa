@@ -64,10 +64,74 @@ as your own conversation key.
 ## Variables
 
 `{{input}}` · `{{turn}}` (unique per turn) · `{{conversation}}` (session id) ·
-`{{handle}}` · `{{vars.x}}` or `{{x}}` · `{{env.X}}`
+`{{handle}}` · `{{vars.x}}` or `{{x}}` · `{{env.X}}` · `{{context}}` ·
+`{{context.pinned}}` · `{{context.<key>}}`
 
 Unknown names are left in place, so a typo appears in the request rather than
-silently becoming empty.
+silently becoming empty. Context keys are the exception — an unwritten key
+renders empty, because a room that just started is not a typo.
+
+## Shared context
+
+Two lines connect an agent to the room's shared state. Neither requires tool
+calling, a prompt change, or agent-side awareness of Oryxa.
+
+```yaml
+turn:
+  body:
+    message: "{{context}}\n\n{{input}}"   # read
+
+context:                                  # write
+  - key: findings
+    from: $text                           # whatever the agent said this turn
+```
+
+Rule fields: `key`, `from` (`$text` or a selector), `kind` (`append` default,
+or `value`), `when` (gate chunks, same syntax as `response.when`), `pin`.
+
+```yaml
+context:
+  - key: plan
+    kind: value
+    from: $.output.plan
+    when: $.done        # without this a streaming agent writes every prefix
+    pin: true
+```
+
+Rules to keep in mind when writing one:
+
+- **`append` unless there is one current answer.** It cannot conflict; that is
+  why it is the default.
+- **Always gate a selector on a streaming agent.** `from: $.answer` with no
+  `when` fills the room with every prefix of the answer.
+- **One rule per key.** Two rules on the same key is a validation error, not a
+  merge.
+- **`$text` is the safe default to start, not to stay on.** Every agent produces
+  text, so it always works — but it appends a whole answer every turn. Once you
+  know which part other agents actually need, move that part to a `value` rule
+  with a selector and the room stops growing.
+
+A failed or cancelled turn writes nothing. Context is snapshotted at turn start,
+so parallel agents do not rewrite each other's questions.
+
+### Keeping a room small
+
+`{{context}}` renders everything and grows with the conversation;
+`{{context.pinned}}` renders only entries someone marked as still mattering and
+does not. Prefer pinned in prompts, and keep `{{context}}` for short rooms and
+for debugging.
+
+An append entry renders its newest 20 items and tells the model when it left
+older ones out (`- (6 earlier items not shown)`). Nothing is deleted — the API
+and the log keep everything; only the prompt is trimmed.
+
+Each `turn.started` records what its agent was shown — `chars` for the growth
+curve, `elided` when a turn answered from a partial room. Check these first when
+an agent starts returning less than it should: a full model window fails quietly,
+not with an error.
+
+`oryxa which <agent>` prints the rules a connector declares — the first thing to
+check when nothing is appearing in shared context.
 
 ## Selectors
 

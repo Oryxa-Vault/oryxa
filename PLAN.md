@@ -76,7 +76,23 @@ features. `?since=` serves all of them.
 entries under optimistic concurrency, both attributed and both a fold over the
 same log — so they survive a restart with versions and pins intact. A stale
 write is refused with what is current, and the rejection is itself an event.
-People-facing until the collaboration tool lets agents reach it.
+
+Agents reach it declaratively, not through a tool they must call: `{{context}}`
+renders the room into whatever a connector calls the prompt, and `context:` rules
+extract part of a finished turn back into it. That choice is load-bearing — a
+tool would work only on frameworks with tool calling, would need a prompt change
+per agent, and would leave recording the result at the model's discretion. A
+rule works everywhere and cannot be talked out of. Context is snapshotted at turn
+start, so parallel lanes never rewrite each other's questions, and a failed turn
+writes nothing.
+
+Size is bounded where it is rendered, not where it is stored. An append entry
+puts its newest 20 items in a prompt and tells the model when it left older ones
+out; the store and the log keep everything. Trimming the fold would need its own
+event to survive a restart, and a room whose history depended on when the server
+last came up would not be a history. Every `turn.started` records the version,
+size and elided count its agent was handed — the log already said what an agent
+replied, and now says what it was asked from.
 
 **Viewer.** Embedded in the binary. Live transcript, agent health, a raw view
 showing every chunk exactly as the agent sent it.
@@ -123,12 +139,15 @@ answer), and one agent failing without taking the room down.
 
 | | |
 |---|---|
-| **Collaboration tool** | `post` / `ask` / `read` / `write` — the agent talking back to the room mid-turn |
+| **Read scoping** | one token opens every session; there is no participant concept anywhere. This is what makes the framework laptop-safe rather than deployable, and it is now the largest gap. |
+| **Mid-turn writes** | rules apply when a turn finishes. An agent that wants to publish a finding *while* still working would need a callback — `{{callback_url}}` exists in the template context but nothing populates it yet. |
 | **Presence** | who is here, who is typing |
-| **Cancel** | in the spec and the session API, no connector declares it and it is unexercised end to end |
 
-None of these is blocked. Shared context is the largest and the one the design
-already covers in detail.
+Read scoping is the one that blocks real use. The other two are additive.
+
+Cancel is no longer unexercised: `TestCancelledTurnWritesNothing` drives it end
+to end. What remains untested is the capability path, where the agent is told to
+stop rather than the request being abandoned — no connector declares `cancel`.
 
 ---
 

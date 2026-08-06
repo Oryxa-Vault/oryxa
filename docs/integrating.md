@@ -180,9 +180,17 @@ Anywhere in `path`, `body`, or `headers`:
 | `{{turn}}` | unique per turn — for protocols needing a fresh run id |
 | `{{vars.x}}` or `{{x}}` | from the connector's own `vars:` block |
 | `{{env.X}}` | the Oryxa server's environment |
+| `{{context}}` | everything the room has agreed, as text |
+| `{{context.pinned}}` | just the curated set |
+| `{{context.<key>}}` | one entry |
 
 An unknown name is **left in place** rather than becoming an empty string, so a
 typo shows up in the request instead of silently vanishing.
+
+Context keys are the one exception: `{{context.plan}}` for a key nobody has
+written yet renders empty. A missing var is a broken config; a missing context
+key is just a room that started five seconds ago, and putting literal braces in
+front of a model to report that is worse than putting nothing.
 
 ### Selectors
 
@@ -210,6 +218,122 @@ when: $.type != REASONING_CONTENT      # not equals
 
 Gated-out chunks become `activity` rather than disappearing, so a mis-set `when`
 is visible in the log instead of hiding behind an empty reply.
+
+### Shared context
+
+A room has shared state: notes, findings and decisions that everyone in it can
+read. Two lines connect your agent to it, and your agent does not have to know
+any of this is happening.
+
+**Reading** — splice it into whatever your framework calls the prompt:
+
+```yaml
+turn:
+  body:
+    message: "{{context}}\n\n{{input}}"
+```
+
+**Writing** — say what your agent leaves behind:
+
+```yaml
+context:
+  - key: findings
+    from: $text          # whatever the agent said this turn
+```
+
+That is the whole feature. The agent above now contributes every answer to
+`findings`, and every other agent in the room sees it on their next turn.
+
+| field | |
+|---|---|
+| `key` | the entry to write |
+| `from` | `$text`, or a selector into the response payload |
+| `kind` | `append` (default) or `value` |
+| `when` | gate which chunks a selector reads — same syntax as `response.when` |
+| `pin` | mark the entry as part of `{{context.pinned}}` |
+
+`append` is the default because it cannot conflict. Use `value` for state with
+one current answer:
+
+```yaml
+context:
+  - key: plan
+    kind: value
+    from: $.output.plan
+    when: $.done          # a streaming agent emits every prefix of its answer
+    pin: true
+```
+
+Three things worth knowing:
+
+- **Context is snapshotted when a turn starts.** Another agent finishing
+  mid-flight does not rewrite the question yours was asked.
+- **A failed or cancelled turn writes nothing.** Half an answer recorded as a
+  finding is worse than no finding, because the next agent can't tell.
+- **Rules are declarative, not a tool your agent calls.** Nothing needs tool
+  calling, no prompt changes, and a model cannot decline to record what it found.
+
+Why not an Oryxa tool the agent calls instead? Because it would only work on
+frameworks with tool calling, would need a prompt change per agent, and would put
+recording the result at the model's discretion. This works everywhere.
+
+### Keeping a room small
+
+`from: $text` with the default `append` grows the room by a whole answer every
+turn, and `{{context}}` puts all of it in front of every agent. Left alone, the
+prompt grows with the length of the conversation until the model's window ends
+it — not with an error, but by quietly returning less than it should.
+
+Three habits, in the order they pay off:
+
+**Write values, not transcripts.** `$text` append is the right way to start,
+when you don't yet know what an agent produces that others need. It is the wrong
+place to stay. A `value` entry with a selector holds one current answer and never
+grows:
+
+```yaml
+context:
+  - key: hit_rate
+    kind: value              # overwrites; the room stays one line
+    from: $.metrics.hit_rate
+    when: $.done
+```
+
+Three turns of `$text` gave us three paragraphs all restating the same number.
+The same three turns of the rule above give one number, current.
+
+**Read the curated set.** `{{context.pinned}}` renders only entries someone
+marked as still mattering. Prefer it in prompts and keep `{{context}}` for
+debugging and for rooms you know are short:
+
+```yaml
+turn:
+  body:
+    message: "{{context.pinned}}\n\n{{input}}"
+```
+
+**Know that long lists are trimmed.** An append entry renders its newest
+`MaxItemsPerEntry` items — 20 — and says so in the prompt when it drops any:
+
+```
+findings:
+- (6 earlier items not shown)
+- the api is rate limited
+```
+
+This is a rendering bound, not a delete. `GET /v1/sessions/{id}/context` and the
+event log still hold every item; only the prompt is trimmed. Trimming the stored
+fold instead would need its own event to survive a restart, and a room whose
+history depended on when the server last came up would not be a history.
+
+Each `turn.started` event records what its agent was actually shown:
+
+```json
+{"agent": "writer", "context": {"version": 279, "keys": ["findings"], "chars": 240, "elided": 6}}
+```
+
+`chars` is the growth curve — plot it to see the wall before you hit it.
+`elided` is the warning that a turn answered from a partial room.
 
 ### Capabilities
 
@@ -297,7 +421,9 @@ would tie us to its release cycle.
 
 **We never touch your prompts or your orchestration.** Multi-agent, planning,
 routing, memory: all yours. A CrewAI crew running six model calls inside one turn
-is one turn to Oryxa.
+is one turn to Oryxa. `{{context}}` is not an exception — it substitutes where
+your connector puts it and nowhere else. Oryxa never adds to a request your
+connector didn't ask for.
 
 **`text:` is a display hint, not a judgement.** It decides what the default
 transcript shows. Everything is recorded regardless, and **raw** shows it.

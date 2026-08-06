@@ -173,8 +173,21 @@ Write a value based on a version someone else has already replaced and you get a
 Loud conflicts beat clever merges — a silent overwrite leaves state that's
 syntactically fine and semantically wrong.
 
-> Context is people-facing today. Agents can't read or write it until the
-> collaboration tool lands.
+Agents reach it too, through their connector rather than through a tool they
+have to call:
+
+```yaml
+turn:
+  body:
+    message: "{{context}}\n\n{{input}}"   # read the room
+
+context:                                  # write back to it
+  - key: findings
+    from: $text
+```
+
+Add that to the researcher and its answers land in `findings`; every other agent
+in the room sees them on their next turn. Neither agent knows the other exists.
 
 ---
 

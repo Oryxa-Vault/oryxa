@@ -122,6 +122,26 @@ func cmdWhich(args []string) {
 	if len(spec.Capabilities) > 0 {
 		fmt.Printf("  %-12s %s\n", "capabilities", strings.Join(spec.Capabilities, ", "))
 	}
+	// What this agent contributes to the room. Worth showing here for the same
+	// reason base is: "why is nothing appearing in shared context" is answered
+	// by looking at the rules, and the alternative is opening the file.
+	for i, r := range spec.Context {
+		label := ""
+		if i == 0 {
+			label = "context"
+		}
+		desc := r.Key + " ← " + r.From
+		if r.Kind != "" {
+			desc += " (" + r.Kind + ")"
+		}
+		if r.When != "" {
+			desc += " when " + r.When
+		}
+		if r.Pin {
+			desc += " pinned"
+		}
+		fmt.Printf("  %-12s %s\n", label, desc)
+	}
 	if len(spec.Vars) > 0 {
 		var kv []string
 		for k, v := range spec.Vars {

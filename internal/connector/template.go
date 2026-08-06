@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+// ContextView is the room's shared state, already rendered as text.
+//
+// This package deliberately does not know how a context entry is shaped. It
+// substitutes strings; sharedctx decides what an entry reads like. Keeping that
+// line means the prompt format can change without touching templating, and the
+// connector package keeps its one job.
+type ContextView struct {
+	All    string            // every entry
+	Pinned string            // the curated subset
+	Keys   map[string]string // one entry each, by key
+}
+
 // Ctx supplies the values a spec can reference as {{...}}.
 type Ctx struct {
 	Input         string
@@ -15,6 +27,7 @@ type Ctx struct {
 	CallbackToken string
 	Vars          map[string]string
 	Captures      map[string]string
+	Context       ContextView
 }
 
 // lookup resolves one {{name}} reference. The second result reports whether the
@@ -47,6 +60,24 @@ func (c Ctx) lookup(name string) (string, bool) {
 		return c.CallbackURL, true
 	case name == "callback_token":
 		return c.CallbackToken, true
+	case name == "context":
+		return c.Context.All, true
+	case strings.HasPrefix(name, "context."):
+		key := strings.TrimPrefix(name, "context.")
+		// `pinned` is reserved. A room can still hold an entry by that name —
+		// it appears in {{context}} and over the API — but the shorthand wins,
+		// because a reserved word that sometimes means something else is worse
+		// than one that always means the same thing.
+		if key == "pinned" {
+			return c.Context.Pinned, true
+		}
+		// A missing key renders empty rather than staying literal, which is the
+		// opposite of the rule for vars below. The reason is that they fail
+		// differently: a missing var is a broken config, while a context key
+		// nobody has written yet is the normal state of a room that just
+		// started. Leaving `{{context.plan}}` in the text would put braces in
+		// front of the model to report a condition that isn't an error.
+		return c.Context.Keys[key], true
 	case strings.HasPrefix(name, "vars."):
 		v, ok := c.Vars[strings.TrimPrefix(name, "vars.")]
 		return v, ok

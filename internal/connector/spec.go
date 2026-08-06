@@ -33,6 +33,56 @@ type Spec struct {
 
 	// Turn runs once per turn. Required.
 	Turn *Step `yaml:"turn" json:"turn"`
+
+	// Context is what this agent contributes back to the room after a turn.
+	//
+	// Declared here rather than inside turn.response because it is not a detail
+	// of parsing: it is the answer to "what does this agent leave behind for
+	// everyone else", which is the whole reason a room has shared state.
+	Context []ContextRule `yaml:"context" json:"context,omitempty"`
+}
+
+// ContextRule extracts one piece of a finished turn into shared context.
+//
+// This is how an agent writes to the room without knowing the room exists. The
+// alternative — an Oryxa tool the agent must call — would work only for
+// frameworks with tool calling, would need a prompt change per agent, and would
+// let a model decline to record what it found. A rule is declarative, applies
+// to any framework, and cannot be talked out of.
+type ContextRule struct {
+	Key string `yaml:"key" json:"key"`
+
+	// Kind is append (default) or value. Append is the default for the same
+	// reason it is the store's default: it cannot conflict.
+	Kind string `yaml:"kind" json:"kind,omitempty"`
+
+	// From is either $text — the turn's assembled text output, which every
+	// agent produces — or a selector into the response payload for agents that
+	// return structure worth keeping separate from their prose.
+	From string `yaml:"from" json:"from"`
+
+	// When gates which chunks a selector reads, exactly as response.when gates
+	// which chunks become text. A streaming agent emits its answer many times
+	// over; without a gate the room fills with every prefix of it.
+	When string `yaml:"when" json:"when,omitempty"`
+
+	// Pin marks the entry as part of the curated set that {{context.pinned}}
+	// renders.
+	Pin bool `yaml:"pin" json:"pin,omitempty"`
+}
+
+// FromText reports whether the rule reads the turn's own output rather than
+// selecting into the response payload.
+func (r ContextRule) FromText() bool { return strings.TrimSpace(r.From) == SourceText }
+
+// SourceText is the `from` value meaning "whatever this agent said this turn".
+const SourceText = "$text"
+
+func (r ContextRule) kindOrDefault() string {
+	if r.Kind == "" {
+		return "append"
+	}
+	return r.Kind
 }
 
 // Step is one HTTP call.
@@ -110,6 +160,28 @@ func (s *Spec) Validate() error {
 		if _, err := time.ParseDuration(s.Timeout); err != nil {
 			return fmt.Errorf("timeout %q is not a duration: %w", s.Timeout, err)
 		}
+	}
+	seen := map[string]bool{}
+	for i, r := range s.Context {
+		where := fmt.Sprintf("context[%d]", i)
+		switch {
+		case strings.TrimSpace(r.Key) == "":
+			return fmt.Errorf("%s: key is required", where)
+		case strings.TrimSpace(r.From) == "":
+			return fmt.Errorf("%s: from is required (%s or a selector)", where, SourceText)
+		}
+		switch r.kindOrDefault() {
+		case "append", "value":
+		default:
+			return fmt.Errorf("%s: kind must be append or value, got %q", where, r.Kind)
+		}
+		// Two rules on one key would race each other every turn and the winner
+		// would depend on rule order, which is not a thing anyone should have
+		// to reason about.
+		if seen[r.Key] {
+			return fmt.Errorf("%s: duplicate rule for key %q", where, r.Key)
+		}
+		seen[r.Key] = true
 	}
 	return nil
 }
