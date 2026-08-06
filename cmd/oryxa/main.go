@@ -80,6 +80,13 @@ func serve(args []string, openWindow bool) {
 			"only safe when nothing can reach this port except that proxy")
 	_ = fs.Parse(args)
 
+	// Connectors reference {{env.ORYXA_AGENT_HOST}} so one file works on a host
+	// and in a container. Default to localhost so a plain `oryxa serve` needs no
+	// environment at all.
+	if os.Getenv("ORYXA_AGENT_HOST") == "" {
+		os.Setenv("ORYXA_AGENT_HOST", "localhost")
+	}
+
 	reg := connector.NewRegistry()
 	n, err := reg.LoadDir(*dir)
 	if err != nil {
@@ -134,7 +141,8 @@ func serve(args []string, openWindow bool) {
 		fmt.Printf("     recovered %d session(s) from the log\n\n", recovered)
 	}
 	for _, s := range reg.List() {
-		fmt.Printf("     • %-14s %s\n", s.Name, s.Base)
+		fmt.Printf("     • %-14s %s\n", s.Name,
+			connector.Ctx{Vars: s.Vars}.RenderString(s.Base))
 	}
 	if n == 0 {
 		fmt.Printf("     (none — drop a .yaml in %s, see connectors/templates/)\n", *dir)
@@ -243,6 +251,9 @@ func check(args []string) {
 	probe := fs.String("probe", "ping from oryxa check", "probe text")
 	_ = fs.Parse(args[1:])
 
+	if os.Getenv("ORYXA_AGENT_HOST") == "" {
+		os.Setenv("ORYXA_AGENT_HOST", "localhost")
+	}
 	reg := connector.NewRegistry()
 	if _, err := reg.LoadDir(*dir); err != nil {
 		fmt.Fprintf(os.Stderr, "loading connectors: %v\n", err)
@@ -267,7 +278,8 @@ func check(args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), spec.TimeoutDuration())
 	defer cancel()
 
-	fmt.Printf("\n  checking %s → %s\n\n", name, spec.Base)
+	base := connector.Ctx{Vars: spec.Vars}.RenderString(spec.Base)
+	fmt.Printf("\n  checking %s → %s\n\n", name, base)
 	res := connector.NewExecutor().Check(ctx, spec, *probe)
 
 	line := func(label, status, detail string) {
@@ -280,7 +292,7 @@ func check(args []string) {
 		return "FAIL"
 	}
 
-	line("reachable", mark(res.Reachable), spec.Base)
+	line("reachable", mark(res.Reachable), base)
 	if res.Open != nil {
 		d := res.Open.Handle
 		if !res.Open.OK {

@@ -1,6 +1,6 @@
 # Works against `go run ./cmd/mockagent`. Streaming, with an open step.
 name: mock-sse
-base: http://localhost:9000
+base: http://{{env.ORYXA_AGENT_HOST}}:9000
 timeout: 2m
 
 vars:

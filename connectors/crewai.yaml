@@ -13,7 +13,7 @@
 # does not: the planner ignores the crew's LLM and falls back to OPENAI_* env
 # vars. Pass planning_llm explicitly if you enable planning.
 name: crewai
-base: http://localhost:5002
+base: http://{{env.ORYXA_AGENT_HOST}}:5002
 timeout: 5m # a crew runs several model calls per turn
 
 capabilities: [multi_turn]

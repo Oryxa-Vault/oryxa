@@ -15,8 +15,16 @@ Status: **M1** — connectors, rooms (many people, many agents), event log, live
 ## Try it in two minutes
 
 ```bash
+docker compose up -d               # oryxa + postgres
+go run ./cmd/mockagent &           # a stand-in agent on :9000
+open http://localhost:8080
+```
+
+Or without Docker:
+
+```bash
 go build -o oryxa ./cmd/oryxa
-go run ./cmd/mockagent &          # a stand-in agent on :9000
+go run ./cmd/mockagent &
 ./oryxa launch window              # server + viewer, opens a browser
 ```
 
@@ -79,6 +87,11 @@ oryxa check my-agent
 captured handle, timing, whether your selectors matched, and warnings for the
 ways a connector can pass while being quietly wrong. It's the fastest way to tune
 one, and it answers *is it me or is it them* without starting a session.
+
+**→ [Tutorial](docs/tutorial.md)** — your agent in a room, end to end.
+
+**→ [Agent skills](skills/)** — let Claude write your connector. It's an
+iterative probe-and-adjust loop, which is what agents are good at.
 
 **→ [Integration guide](docs/integrating.md)** — recipes for streaming,
 conversations, reasoning models and typed-event protocols; the full reference for

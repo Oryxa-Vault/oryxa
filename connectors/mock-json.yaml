@@ -1,7 +1,7 @@
 # Works against `go run ./cmd/mockagent`. No streaming, no open step —
 # the minimum a connector can be.
 name: mock-json
-base: http://localhost:9000
+base: http://{{env.ORYXA_AGENT_HOST}}:9000
 
 turn:
   method: POST

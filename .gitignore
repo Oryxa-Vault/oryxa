@@ -20,11 +20,16 @@
 !/connectors/adk.yaml
 !/connectors/pydanticai.yaml
 !/connectors/crewai.yaml
+# bee-agui.yaml stays local: it names a private internal service. The generic
+# AG-UI template covers the same protocol for everyone else.
 
 # Environment
 .env
 .env.*
 !.env.example
+
+# Compose overrides are local
+docker-compose.override.yml
 
 # Editors / OS
 .DS_Store

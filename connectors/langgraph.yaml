@@ -7,7 +7,7 @@
 #   langgraph dev             # python default http://localhost:2024
 #
 name: langgraph
-base: http://localhost:2024
+base: http://{{env.ORYXA_AGENT_HOST}}:2024
 timeout: 5m
 
 vars:

@@ -4,7 +4,7 @@
 # have: a framework wrapped in whatever web layer the team already uses. It uses
 # the generic-http path, no template of its own.
 name: pydanticai
-base: http://localhost:5001
+base: http://{{env.ORYXA_AGENT_HOST}}:5001
 timeout: 3m
 
 capabilities: [stream, multi_turn]

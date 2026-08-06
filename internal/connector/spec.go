@@ -90,7 +90,10 @@ func (s *Spec) Validate() error {
 	if strings.TrimSpace(s.Base) == "" {
 		return fmt.Errorf("base is required")
 	}
-	if !strings.HasPrefix(s.Base, "http://") && !strings.HasPrefix(s.Base, "https://") {
+	// A templated base is resolved at call time, so only literal ones can be
+	// checked here.
+	if !strings.Contains(s.Base, "{{") &&
+		!strings.HasPrefix(s.Base, "http://") && !strings.HasPrefix(s.Base, "https://") {
 		return fmt.Errorf("base must be an http(s) URL, got %q", s.Base)
 	}
 	if s.Turn == nil {

@@ -44,7 +44,8 @@ type TurnResult struct {
 func (e *Executor) Check(ctx context.Context, spec *Spec, probe string) *CheckResult {
 	res := &CheckResult{Agent: spec.Name, Capabilities: spec.Capabilities}
 
-	if err := dialable(ctx, spec.Base); err != nil {
+	base := Ctx{Vars: spec.Vars}.RenderString(spec.Base)
+	if err := dialable(ctx, base); err != nil {
 		res.Error = err.Error()
 		return res
 	}

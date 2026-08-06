@@ -7,7 +7,7 @@
 #   adk api_server            # default http://localhost:8000
 #
 name: adk
-base: http://localhost:8000
+base: http://{{env.ORYXA_AGENT_HOST}}:8000
 timeout: 5m
 
 vars:

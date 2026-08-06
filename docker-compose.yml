@@ -1,0 +1,50 @@
+# Oryxa with a durable log. `docker compose up` and open http://localhost:8080.
+#
+# Your agents keep running wherever they already run — Oryxa reaches out to
+# them, so nothing about them needs to change or move into this file.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: oryxa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oryxa}
+      POSTGRES_DB: oryxa
+    volumes:
+      - oryxa-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oryxa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Not published by default: nothing outside this network needs the database.
+    # Add a ports entry if you want to inspect it with psql.
+
+  oryxa:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${ORYXA_PORT:-8080}:8080"
+    environment:
+      ORYXA_DATABASE_URL: postgres://oryxa:${POSTGRES_PASSWORD:-oryxa}@postgres:5432/oryxa?sslmode=disable
+      # Set ORYXA_TOKEN to require a token. Unset, anyone who can reach the
+      # port has full access — fine on a laptop, nowhere else.
+      ORYXA_TOKEN: ${ORYXA_TOKEN:-}
+      # Set to the header your proxy already sets (X-Forwarded-User, ...) so
+      # the log records people rather than claims.
+      ORYXA_TRUST_HEADER: ${ORYXA_TRUST_HEADER:-}
+      # Connectors use {{env.ORYXA_AGENT_HOST}}, so the same files work here and
+      # on a host. Agents on the host machine are reachable at this name.
+      ORYXA_AGENT_HOST: ${ORYXA_AGENT_HOST:-host.docker.internal}
+    volumes:
+      # Your connectors. Edit them on the host; restart to reload.
+      - ./connectors:/connectors:ro
+    # Agents running on the host machine are reachable at host.docker.internal.
+    # On Linux this alias needs the mapping below; on macOS and Windows it is
+    # already provided by Docker Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  oryxa-pgdata:

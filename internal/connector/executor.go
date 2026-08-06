@@ -101,7 +101,11 @@ func (e *Executor) do(ctx context.Context, spec *Spec, step *Step, tc Ctx) (*htt
 	if method == "" {
 		method = http.MethodPost
 	}
-	url := joinURL(spec.Base, tc.RenderString(step.Path))
+	// base is templated too, so one connector file works wherever it runs:
+	//   base: http://{{env.AGENT_HOST}}:2024
+	// A host and a container reach the same agent by different names, and
+	// keeping two near-identical files in sync is how they drift.
+	url := joinURL(tc.RenderString(spec.Base), tc.RenderString(step.Path))
 
 	var bodyReader io.Reader
 	if step.Body != nil {
