@@ -57,9 +57,16 @@ Full reference: [docs/integrating.md](docs/integrating.md).
 gates and declared capabilities. `oryxa check` probes one with a real turn and
 warns about the ways a connector can pass while being quietly wrong.
 
-**Sessions.** Many people, one or more agents. Input queues and fans out — one
-turn per agent — and runs one at a time, because each agent's own conversation is
-serial. Input carries who sent it. Queued turns can be withdrawn.
+**Sessions.** Many people, one or more agents. Input fans out to one turn per
+agent, each landing in that agent's own **lane** — its own queue, its own
+goroutine, its own conversation handle.
+
+The serialization requirement is per agent, not per session: an agent's
+conversation is sequential, but two agents have two conversations and no reason
+to wait on each other. So turns are strictly ordered within a lane and fully
+parallel across lanes. Measured on five live frameworks answering one question:
+15.6s of work in 4.9s wall clock, bounded by the slowest agent rather than the
+sum of all five.
 
 **Events.** Append-only, ordered, attributed. Sessions are a fold over the log,
 which is why late join, replay and audit are one mechanism rather than three
@@ -141,6 +148,9 @@ Questions this project actually answered, rather than guessed:
 
 - **Queue or interrupt when someone sends mid-turn?** Queue — the agent's own
   conversation is serial, so interrupting isn't available to offer.
+- **How much of a room must serialize?** One agent, not the room. Serializing the
+  whole session was an invented constraint that cost a 3.2x slowdown on five
+  agents; lanes removed it without weakening the guarantee that matters.
 - **Does riding the framework's session model work?** Yes. Three people's turns
   accumulate into one coherent conversation the framework holds itself.
 - **Do tool calls need special handling?** No. Treating everything that isn't

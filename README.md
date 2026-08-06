@@ -27,9 +27,11 @@ came back. Then **+ new session**, and talk to it.
 in the composer. Both tabs are in the same room, watching the same agent.
 
 **Several agents in one room:** click more than one agent before creating the
-session. Input fans out to each — one question, one answer per framework, still
-one turn at a time. Each keeps its own conversation with its own framework, and
-one agent failing does not stop the others.
+session. Input fans out to each — one question, one answer per framework. Each
+gets its own lane: its own queue, its own goroutine, its own conversation with
+its own framework. They answer **in parallel**, so a room costs its slowest
+agent rather than the sum of all of them. One agent failing does not stop the
+others.
 
 ```bash
 curl -X POST localhost:8080/v1/sessions \
@@ -211,9 +213,11 @@ GET    /v1/sessions/{id}/events?since=   raw log
     └─────────────┘
 ```
 
-**One turn at a time.** Not a preference — the agent's own conversation is
-serial, so a session running turns concurrently would misrepresent what's
-underneath. Input arriving mid-turn queues.
+**One turn at a time, per agent.** Not a preference — an agent's own conversation
+is sequential, so overlapping its turns would misrepresent what's underneath.
+Input arriving mid-turn queues in that agent's lane. Different agents have
+different conversations and run in parallel: five live frameworks answering one
+question took 4.9s of wall clock for 15.6s of work.
 
 **The log is the source of truth.** Sessions are a fold over it. That's why late
 join, replay and audit are one mechanism rather than three features.

@@ -521,8 +521,10 @@ func TestRoomWithSeveralAgents(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if maxConcurrent != 1 {
-		t.Fatalf("max concurrent turns = %d; the room stays serial", maxConcurrent)
+	// Different agents must overlap: three lanes, three conversations, no
+	// reason for any of them to wait on the others.
+	if maxConcurrent < 2 {
+		t.Fatalf("max concurrent turns = %d; agents should run in parallel", maxConcurrent)
 	}
 	for name, n := range opens {
 		if n != 1 {
@@ -582,5 +584,115 @@ func TestUnknownAgentIsRejectedAtSessionCreate(t *testing.T) {
 	ory := newOryxa(t)
 	if code, _ := do(t, "POST", ory.URL+"/v1/sessions", map[string]string{"agent": "ghost"}); code != 400 {
 		t.Fatalf("code = %d, want 400", code)
+	}
+}
+
+// The serialization requirement is per agent, not per session. These two tests
+// pin both halves: one agent never overlaps itself, and different agents do.
+func TestOneAgentNeverOverlapsItself(t *testing.T) {
+	var mu sync.Mutex
+	var concurrent, maxConcurrent int
+	var order []string
+
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		concurrent++
+		if concurrent > maxConcurrent {
+			maxConcurrent = concurrent
+		}
+		order = append(order, fmt.Sprint(body["p"]))
+		mu.Unlock()
+		time.Sleep(40 * time.Millisecond)
+		mu.Lock()
+		concurrent--
+		mu.Unlock()
+		fmt.Fprintf(w, `{"output":"%v"}`, body["p"])
+	}))
+	defer agent.Close()
+
+	ory := newOryxa(t)
+	do(t, "POST", ory.URL+"/v1/agents", map[string]any{
+		"name": "solo", "base": agent.URL,
+		"turn": map[string]any{"method": "POST", "path": "/run",
+			"body":     map[string]any{"p": "{{input}}"},
+			"response": map[string]any{"format": "json", "text": []string{"$.output"}}},
+	})
+	_, s := do(t, "POST", ory.URL+"/v1/sessions", map[string]any{"agent": "solo"})
+	sid := s["id"].(string)
+
+	var ids []string
+	for _, who := range []string{"alice", "bob", "carol"} {
+		_, tr := do(t, "POST", ory.URL+"/v1/sessions/"+sid+"/input",
+			map[string]string{"text": who, "author": who})
+		ids = append(ids, tr["id"].(string))
+	}
+	for _, id := range ids {
+		if got := waitTurn(t, ory.URL, sid, id); got["state"] != "done" {
+			t.Fatalf("turn %s: %v %v", id, got["state"], got["error"])
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if maxConcurrent != 1 {
+		t.Fatalf("one agent ran %d turns at once; its conversation is sequential", maxConcurrent)
+	}
+	if strings.Join(order, ",") != "alice,bob,carol" {
+		t.Fatalf("order = %v, want submission order", order)
+	}
+}
+
+// A slow agent must not hold up a fast one. Serialising the room would make a
+// question take the sum of every agent instead of the slowest.
+func TestSlowAgentDoesNotBlockFastOne(t *testing.T) {
+	mk := func(delay time.Duration) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(delay)
+			fmt.Fprint(w, `{"output":"ok"}`)
+		}))
+	}
+	slow, fast := mk(600*time.Millisecond), mk(20*time.Millisecond)
+	defer slow.Close()
+	defer fast.Close()
+
+	ory := newOryxa(t)
+	for name, srv := range map[string]*httptest.Server{"slow": slow, "fast": fast} {
+		do(t, "POST", ory.URL+"/v1/agents", map[string]any{
+			"name": name, "base": srv.URL,
+			"turn": map[string]any{"method": "POST", "path": "/run",
+				"body":     map[string]any{"p": "{{input}}"},
+				"response": map[string]any{"format": "json", "text": []string{"$.output"}}},
+		})
+	}
+	_, s := do(t, "POST", ory.URL+"/v1/sessions",
+		map[string]any{"agents": []string{"slow", "fast"}})
+	sid := s["id"].(string)
+
+	start := time.Now()
+	do(t, "POST", ory.URL+"/v1/sessions/"+sid+"/input", map[string]string{"text": "go"})
+
+	// Wait for the fast lane only.
+	deadline := time.Now().Add(5 * time.Second)
+	var fastAt time.Duration
+	for time.Now().Before(deadline) {
+		_, v := do(t, "GET", ory.URL+"/v1/sessions/"+sid, nil)
+		hist, _ := v["history"].([]any)
+		for _, h := range hist {
+			if m := h.(map[string]any); m["agent"] == "fast" && m["state"] == "done" {
+				fastAt = time.Since(start)
+			}
+		}
+		if fastAt > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if fastAt == 0 {
+		t.Fatal("fast agent never finished")
+	}
+	if fastAt > 400*time.Millisecond {
+		t.Fatalf("fast agent took %v; it waited on the slow one", fastAt)
 	}
 }

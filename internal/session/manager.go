@@ -82,22 +82,53 @@ type session struct {
 	agents  []string
 	created time.Time
 
-	mu      sync.Mutex
-	state   State
-	queue   []*Turn
-	current *Turn
+	mu    sync.Mutex
+	state State
+
+	// One lane per agent. Each carries that agent's queue, its conversation
+	// handle, and its own turn loop — so turns are strictly ordered within an
+	// agent and run in parallel across agents.
+	lanes map[string]*lane
+
+	hmu     sync.Mutex
 	history []*Turn
 
-	// Each agent keeps its own conversation with its own framework, so handles
-	// and captures are per agent rather than per session.
-	handles  map[string]string
-	captures map[string]map[string]string
-	opened   map[string]bool
-
-	cancel context.CancelFunc
-
-	wake   chan struct{}
 	closed chan struct{}
+}
+
+func (s *session) lane(agent string) *lane {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lanes[agent]
+}
+
+func (s *session) allLanes() []*lane {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*lane, 0, len(s.lanes))
+	for _, a := range s.agents {
+		if l := s.lanes[a]; l != nil {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// derivedState reports running when any lane is busy. A room is working if
+// anyone in it is.
+func (s *session) derivedState() State {
+	s.mu.Lock()
+	if s.state == StateClosed {
+		s.mu.Unlock()
+		return StateClosed
+	}
+	s.mu.Unlock()
+	for _, l := range s.allLanes() {
+		if l.running() {
+			return StateRunning
+		}
+	}
+	return StateIdle
 }
 
 var (
@@ -148,15 +179,15 @@ func (m *Manager) Create(agents ...string) (Summary, error) {
 	}
 
 	s := &session{
-		id:       "s_" + randHex(8),
-		agents:   list,
-		created:  time.Now().UTC(),
-		state:    StateIdle,
-		handles:  map[string]string{},
-		captures: map[string]map[string]string{},
-		opened:   map[string]bool{},
-		wake:     make(chan struct{}, 1),
-		closed:   make(chan struct{}),
+		id:      "s_" + randHex(8),
+		agents:  list,
+		created: time.Now().UTC(),
+		state:   StateIdle,
+		lanes:   map[string]*lane{},
+		closed:  make(chan struct{}),
+	}
+	for _, a := range list {
+		s.lanes[a] = newLane(a)
 	}
 	m.mu.Lock()
 	m.sessions[s.id] = s
@@ -165,7 +196,7 @@ func (m *Manager) Create(agents ...string) (Summary, error) {
 	m.emit(s.id, "session.created", "", "", map[string]any{
 		"agent": list[0], "agents": list,
 	})
-	go m.loop(s)
+	m.startLanes(s)
 	return s.summary(), nil
 }
 
@@ -236,22 +267,26 @@ func (m *Manager) View(id string) (View, bool) {
 	if !ok {
 		return View{}, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	v := View{Summary: s.summary()}
 
-	v := View{
-		Summary: s.summaryLocked(),
-		Queue:   copyTurns(s.queue),
-		History: copyTurns(s.history),
+	// Merge the lanes. Several agents can be mid-turn at once, so "current" is
+	// whichever lane answered first; the queue is everything still waiting.
+	for _, l := range s.allLanes() {
+		q, cur := l.snapshot()
+		v.Queue = append(v.Queue, q...)
+		if cur != nil && v.Current == nil {
+			v.Current = cur
+		}
 	}
-	if s.current != nil {
-		cur := *s.current
-		v.Current = &cur
-	}
+	s.hmu.Lock()
+	v.History = copyTurns(s.history)
+	s.hmu.Unlock()
 	return v, true
 }
 
 // Submit queues input. Anyone in the room may send; the author travels with it.
+// One input becomes one turn per agent — everyone in the room asked everyone in
+// the room — and each lands in that agent's own lane.
 func (m *Manager) Submit(id, author, text string) (Turn, error) {
 	s, ok := m.get(id)
 	if !ok {
@@ -262,29 +297,30 @@ func (m *Manager) Submit(id, author, text string) (Turn, error) {
 		s.mu.Unlock()
 		return Turn{}, ErrClosed
 	}
-	// One input becomes one turn per agent present. Everyone in the room asked
-	// everyone in the room.
+	agents := append([]string(nil), s.agents...)
+	s.mu.Unlock()
+
 	group := "g_" + randHex(6)
-	var made []*Turn
-	for _, a := range s.agents {
+	var first Turn
+	for i, a := range agents {
+		l := s.lane(a)
+		if l == nil {
+			continue
+		}
 		t := &Turn{
 			ID: "t_" + randHex(6), Agent: a, Author: author,
 			Text: text, State: TurnQueued, Group: group,
 		}
-		s.queue = append(s.queue, t)
-		made = append(made, t)
-	}
-	pos := len(s.queue)
-	out := *made[0]
-	s.mu.Unlock()
-
-	for _, t := range made {
+		pos := l.enqueue(t)
+		if i == 0 {
+			first = *t
+		}
 		m.emit(s.id, "input.submitted", author, t.ID, map[string]any{
-			"text": text, "position": pos, "agent": t.Agent, "group": group,
+			"text": text, "position": pos, "agent": a, "group": group,
 		})
+		l.nudge()
 	}
-	s.nudge()
-	return out, nil
+	return first, nil
 }
 
 // Withdraw removes a queued turn. Only queued turns can be withdrawn — a
@@ -294,32 +330,32 @@ func (m *Manager) Withdraw(id, turnID, actor string) error {
 	if !ok {
 		return ErrNoSession
 	}
-	s.mu.Lock()
-	for i, t := range s.queue {
-		if t.ID == turnID {
-			s.queue = append(s.queue[:i], s.queue[i+1:]...)
-			s.mu.Unlock()
+	for _, l := range s.allLanes() {
+		if l.withdraw(turnID) {
 			m.emit(s.id, "input.withdrawn", actor, turnID, nil)
 			return nil
 		}
 	}
-	s.mu.Unlock()
 	return ErrNoTurn
 }
 
+// Cancel stops every turn currently running in the room.
 func (m *Manager) Cancel(id, actor string) error {
 	s, ok := m.get(id)
 	if !ok {
 		return ErrNoSession
 	}
-	s.mu.Lock()
-	cancel := s.cancel
-	s.mu.Unlock()
-	if cancel == nil {
+	stopped := 0
+	for _, l := range s.allLanes() {
+		if l.running() {
+			l.stop()
+			stopped++
+		}
+	}
+	if stopped == 0 {
 		return ErrNoTurn
 	}
-	cancel()
-	m.emit(s.id, "turn.cancel_requested", actor, "", nil)
+	m.emit(s.id, "turn.cancel_requested", actor, "", map[string]int{"lanes": stopped})
 	return nil
 }
 
@@ -334,98 +370,103 @@ func (m *Manager) Close(id, actor string) error {
 		return nil
 	}
 	s.state = StateClosed
-	if s.cancel != nil {
-		s.cancel()
-	}
 	close(s.closed)
 	s.mu.Unlock()
+
+	for _, l := range s.allLanes() {
+		l.stop()
+		l.nudge() // wake the loop so it observes the close and exits
+	}
 	m.emit(s.id, "session.closed", actor, "", nil)
 	return nil
 }
 
 func (s *session) summary() Summary {
+	state := s.derivedState()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.summaryLocked()
+	sum := s.summaryLocked()
+	s.mu.Unlock()
+	sum.State = state
+	return sum
 }
 
 func (s *session) summaryLocked() Summary {
 	sum := Summary{
 		ID: s.id, Agents: append([]string(nil), s.agents...),
 		State: s.state, Created: s.created,
-		Handles: cloneMap(s.handles),
+		Handles: map[string]string{},
+	}
+	for a, l := range s.lanes {
+		l.mu.Lock()
+		if l.handle != "" {
+			sum.Handles[a] = l.handle
+		}
+		l.mu.Unlock()
 	}
 	if len(s.agents) > 0 {
 		sum.Agent = s.agents[0]
-		sum.Handle = s.handles[s.agents[0]]
+		sum.Handle = sum.Handles[s.agents[0]]
 	}
 	return sum
 }
 
-func (s *session) nudge() {
-	select {
-	case s.wake <- struct{}{}:
-	default:
+// startLanes runs one goroutine per agent. Turns are ordered within a lane and
+// parallel across lanes, which is the actual constraint: an agent's own
+// conversation is sequential, two agents' conversations are independent.
+func (m *Manager) startLanes(s *session) {
+	for _, l := range s.allLanes() {
+		go m.laneLoop(s, l)
 	}
 }
 
-// loop is the serialization point: one goroutine per session, one turn at a time.
-func (m *Manager) loop(s *session) {
+func (m *Manager) laneLoop(s *session, l *lane) {
 	for {
 		select {
 		case <-s.closed:
 			return
-		case <-s.wake:
+		case <-l.wake:
 		}
 		for {
 			s.mu.Lock()
-			if s.state == StateClosed || len(s.queue) == 0 {
-				s.mu.Unlock()
+			closed := s.state == StateClosed
+			s.mu.Unlock()
+			if closed {
 				break
 			}
-			t := s.queue[0]
-			s.queue = s.queue[1:]
-			t.State = TurnRunning
-			s.current = t
-			s.state = StateRunning
-			s.mu.Unlock()
-
-			m.run(s, t)
-
-			s.mu.Lock()
-			s.current = nil
-			s.history = append(s.history, t)
-			if s.state != StateClosed {
-				s.state = StateIdle
+			t := l.take()
+			if t == nil {
+				break
 			}
-			s.mu.Unlock()
+			m.run(s, l, t)
+			l.done(t, &s.history, &s.hmu)
 		}
 	}
 }
 
-func (m *Manager) run(s *session, t *Turn) {
-	agent := t.Agent
+func (m *Manager) run(s *session, l *lane, t *Turn) {
+	agent := l.agent
 	spec, ok := m.reg.Get(agent)
 	if !ok {
-		s.finish(t, TurnFailed, "agent no longer registered: "+agent, "")
+		finish(l, t, TurnFailed, "agent no longer registered: "+agent, "")
 		m.emit(s.id, "turn.failed", agent, t.ID, map[string]string{"error": "agent no longer registered"})
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), spec.TimeoutDuration())
-	s.mu.Lock()
-	s.cancel = cancel
-	captures := cloneMap(s.captures[agent])
-	handle := s.handles[agent]
-	opened := s.opened[agent]
+	l.mu.Lock()
+	l.cancel = cancel
+	captures := cloneMap(l.caps)
+	handle := l.handle
+	opened := l.opened
+	l.mu.Unlock()
+
 	author, text := t.Author, t.Text
-	s.mu.Unlock()
 
 	defer func() {
 		cancel()
-		s.mu.Lock()
-		s.cancel = nil
-		s.mu.Unlock()
+		l.mu.Lock()
+		l.cancel = nil
+		l.mu.Unlock()
 	}()
 
 	m.emit(s.id, "turn.started", author, t.ID, map[string]string{
@@ -442,25 +483,22 @@ func (m *Manager) run(s *session, t *Turn) {
 	}
 
 	// Open lazily, once per agent: an agent that is not running yet should fail
-	// its own first turn, not session creation and not the other agents.
+	// its own first turn, not session creation and not the other lanes.
 	if spec.Open != nil && !opened {
 		h, caps, err := m.exec.Open(ctx, spec, tc)
 		if err != nil {
-			s.finish(t, TurnFailed, err.Error(), "")
+			finish(l, t, TurnFailed, err.Error(), "")
 			m.emit(s.id, "turn.failed", agent, t.ID, map[string]string{"error": err.Error()})
 			return
 		}
-		s.mu.Lock()
-		s.opened[agent] = true
-		s.handles[agent] = h
-		if s.captures[agent] == nil {
-			s.captures[agent] = map[string]string{}
-		}
+		l.mu.Lock()
+		l.opened = true
+		l.handle = h
 		for k, v := range caps {
-			s.captures[agent][k] = v
+			l.caps[k] = v
 		}
-		captures = cloneMap(s.captures[agent])
-		s.mu.Unlock()
+		captures = cloneMap(l.caps)
+		l.mu.Unlock()
 
 		tc.Handle, tc.Captures = h, captures
 		m.emit(s.id, "session.opened", agent, t.ID, map[string]string{
@@ -478,22 +516,24 @@ func (m *Manager) run(s *session, t *Turn) {
 
 	switch {
 	case err != nil && ctx.Err() != nil:
-		s.finish(t, TurnCancelled, "cancelled", "")
+		finish(l, t, TurnCancelled, "cancelled", "")
 		m.emit(s.id, "turn.cancelled", agent, t.ID, nil)
 	case err != nil:
-		// One agent failing must not take the room down: the other turns in
-		// this group still run.
-		s.finish(t, TurnFailed, err.Error(), "")
+		// One agent failing must not take the room down: the other lanes are
+		// already running independently and are unaffected.
+		finish(l, t, TurnFailed, err.Error(), "")
 		m.emit(s.id, "turn.failed", agent, t.ID, map[string]string{"error": err.Error()})
 	default:
-		s.finish(t, TurnDone, "", string(out))
+		finish(l, t, TurnDone, "", string(out))
 		m.emit(s.id, "turn.finished", agent, t.ID, map[string]any{"chars": len(out)})
 	}
 }
 
-func (s *session) finish(t *Turn, state TurnState, errMsg, output string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// finish mutates the turn under its lane's lock, so a reader taking a snapshot
+// can never encode a half-written struct.
+func finish(l *lane, t *Turn, state TurnState, errMsg, output string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	t.State, t.Error, t.Output = state, errMsg, output
 }
 
@@ -551,8 +591,10 @@ func (m *Manager) Rehydrate() (int, error) {
 			m.sessions[id] = s
 			m.mu.Unlock()
 			if s.state != StateClosed {
-				go m.loop(s)
-				s.nudge() // anything re-queued starts immediately
+				m.startLanes(s)
+				for _, l := range s.allLanes() {
+					l.nudge() // anything re-queued starts immediately
+				}
 			}
 			n++
 		}
@@ -565,13 +607,10 @@ func rebuild(id string, evs []events.Event) *session {
 		return nil
 	}
 	s := &session{
-		id:       id,
-		state:    StateIdle,
-		handles:  map[string]string{},
-		captures: map[string]map[string]string{},
-		opened:   map[string]bool{},
-		wake:     make(chan struct{}, 1),
-		closed:   make(chan struct{}),
+		id:     id,
+		state:  StateIdle,
+		lanes:  map[string]*lane{},
+		closed: make(chan struct{}),
 	}
 	turns := map[string]*Turn{}
 	var order []string
@@ -599,10 +638,14 @@ func rebuild(id string, evs []events.Event) *session {
 			} else if d.Agent != "" {
 				s.agents = []string{d.Agent}
 			}
+			for _, a := range s.agents {
+				s.lanes[a] = newLane(a)
+			}
 		case "session.opened":
 			if d.Agent != "" {
-				s.handles[d.Agent] = d.Handle
-				s.opened[d.Agent] = true
+				if l := s.lanes[d.Agent]; l != nil {
+					l.handle, l.opened = d.Handle, true
+				}
 			}
 		case "session.closed":
 			s.state = StateClosed
@@ -657,9 +700,16 @@ func rebuild(id string, evs []events.Event) *session {
 		if t == nil {
 			continue
 		}
+		// Route each recovered turn back to its own lane.
+		l := s.lanes[t.Agent]
+		if l == nil && len(s.agents) > 0 {
+			l = s.lanes[s.agents[0]]
+		}
 		switch t.State {
 		case TurnQueued:
-			s.queue = append(s.queue, t)
+			if l != nil {
+				l.queue = append(l.queue, t)
+			}
 		case TurnRunning:
 			t.State = TurnFailed
 			t.Error = "interrupted by restart; outcome unknown"
