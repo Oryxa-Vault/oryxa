@@ -176,6 +176,54 @@ Unset, authors stay self-declared, and the startup banner says so:
 All three default to off so the two-minute quickstart stays two minutes. None
 should be off anywhere else.
 
+## Shared context
+
+A room has shared state alongside its transcript — notes, decisions, working
+values that everyone can read and write. Like sessions, it is a fold over the
+event log, so it survives a restart and every change is attributed.
+
+Two kinds, because most shared state is one of two shapes:
+
+```bash
+# append — add-only. Conflicts are impossible by construction, so this is
+# the default: findings and notes are what most shared content actually is.
+curl -X POST .../context/findings -d '{"append":"postgres handles concurrent writers"}'
+
+# value — a single mutable value under optimistic concurrency.
+curl -X POST .../context/decision -d '{"value":"start with sqlite"}'
+curl -X POST .../context/decision -H 'If-Match: 4' -d '{"value":"switch to postgres"}'
+```
+
+A stale write is **refused with what is current**, so the caller can merge
+instead of guessing:
+
+```json
+409  {"error":"stale write to \"decision\": current version is 4",
+      "current":"start with sqlite","version":4,"by":"carol"}
+```
+
+Loud conflicts beat clever merges. A silent overwrite leaves state that is
+syntactically fine and semantically wrong, and surfaces much later as an agent
+behaving oddly. Rejections are recorded as `conflict.rejected` too — two people
+fighting over a key is a signal worth seeing, not something to bury in retry
+logic.
+
+Entries can be **pinned**: the small curated set meant to be put in front of an
+agent without swamping it.
+
+> Today context is people-facing — agents can't read or write it until the
+> collaboration tool (`post` / `ask` / `read` / `write`) lands.
+
+## Docker
+
+```bash
+docker build -t oryxa .
+docker run -p 8080:8080 -v ./connectors:/connectors oryxa
+```
+
+15MB, `scratch`, no cgo — the viewer is embedded, so there is nothing to serve
+alongside it. SIGTERM drains rather than killing in-flight turns.
+
 ## Endpoints
 
 ```
@@ -190,6 +238,10 @@ POST   /v1/sessions/{id}/input           {text, author} — queues if busy
 DELETE /v1/sessions/{id}/input/{tid}     withdraw a queued turn
 POST   /v1/sessions/{id}/cancel          stop the running turn
 POST   /v1/sessions/{id}/close
+
+GET    /v1/sessions/{id}/context         shared state
+POST   /v1/sessions/{id}/context/{key}   {append} or {value} (If-Match: version)
+POST   /v1/sessions/{id}/context/{key}/pin
 
 GET    /v1/sessions/{id}/stream?since=   SSE, resumable from any point
 GET    /v1/sessions/{id}/events?since=   raw log
@@ -247,8 +299,9 @@ go test -race ./...
 
 ## Not built yet
 
-Shared context (`log` / `state` regions, OCC), the collaboration tool
-(`post` / `ask` / `read` / `write`), presence.
+The collaboration tool (`post` / `ask` / `read` / `write`) — so agents can use
+shared context, not just people. Presence (who's here, who's typing). Event hash
+chaining and usage accounting.
 
 Design docs are in `design/`; [`PLAN.md`](PLAN.md) is the source of truth.
 

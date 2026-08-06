@@ -72,6 +72,12 @@ sum of all five.
 which is why late join, replay and audit are one mechanism rather than three
 features. `?since=` serves all of them.
 
+**Shared context.** Append entries (conflict-free by construction) and value
+entries under optimistic concurrency, both attributed and both a fold over the
+same log — so they survive a restart with versions and pins intact. A stale
+write is refused with what is current, and the rejection is itself an event.
+People-facing until the collaboration tool lets agents reach it.
+
 **Viewer.** Embedded in the binary. Live transcript, agent health, a raw view
 showing every chunk exactly as the agent sent it.
 
@@ -93,7 +99,9 @@ clients; the viewer exchanges it for an HttpOnly cookie because `EventSource`
 cannot set headers and the stream needs authenticating too. Off by default, and
 the server says so at startup.
 
-**CLI.** `serve`, `launch window`, `check`.
+**CLI.** `serve`, `launch window`, `check`. Graceful shutdown on SIGTERM, so a
+restart drains rather than manufacturing turns whose outcome is unknown.
+15MB scratch image.
 
 ### Verified against real servers and a real model
 
@@ -115,7 +123,6 @@ answer), and one agent failing without taking the room down.
 
 | | |
 |---|---|
-| **Shared context** | `log` / `state` regions with optimistic concurrency — designed in [08-sessions-context.md](design/08-sessions-context.md), not implemented |
 | **Collaboration tool** | `post` / `ask` / `read` / `write` — the agent talking back to the room mid-turn |
 | **Presence** | who is here, who is typing |
 | **Cancel** | in the spec and the session API, no connector declares it and it is unexercised end to end |

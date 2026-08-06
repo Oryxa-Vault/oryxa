@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/oryxa/oryxa/internal/connector"
 	"github.com/oryxa/oryxa/internal/events"
 	"github.com/oryxa/oryxa/internal/session"
+	"github.com/oryxa/oryxa/internal/sharedctx"
 	"github.com/oryxa/oryxa/internal/web"
 )
 
@@ -65,6 +67,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /v1/sessions/{id}/input/{tid}", s.withdrawInput)
 	mux.HandleFunc("POST /v1/sessions/{id}/cancel", s.cancelTurn)
 	mux.HandleFunc("POST /v1/sessions/{id}/close", s.closeSession)
+
+	// Shared context
+	mux.HandleFunc("GET /v1/sessions/{id}/context", s.getContext)
+	mux.HandleFunc("POST /v1/sessions/{id}/context/{key}", s.writeContext)
+	mux.HandleFunc("POST /v1/sessions/{id}/context/{key}/pin", s.pinContext)
 
 	// Log
 	mux.HandleFunc("GET /v1/sessions/{id}/events", s.getEvents)
@@ -360,6 +367,10 @@ func statusFor(err error) int {
 	switch {
 	case err == nil:
 		return 200
+	case errors.Is(err, sharedctx.ErrNotFound):
+		return 404
+	case errors.Is(err, sharedctx.ErrWrongKind):
+		return 409
 	case strings.Contains(err.Error(), "not found"):
 		return 404
 	case strings.Contains(err.Error(), "closed"):
@@ -389,4 +400,100 @@ func logging(next http.Handler) http.Handler {
 			fmt.Printf("%s %s %s\n", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
 		}
 	})
+}
+
+// ---- shared context ----
+
+func (s *Server) getContext(w http.ResponseWriter, r *http.Request) {
+	entries, ok := s.mgr.Context(r.PathValue("id"))
+	if !ok {
+		writeErr(w, 404, fmt.Errorf("session not found"))
+		return
+	}
+	if entries == nil {
+		entries = []sharedctx.Entry{}
+	}
+	writeJSON(w, 200, map[string]any{"context": entries})
+}
+
+// writeContext appends or sets, depending on the body. Append is the default
+// because most shared content is add-only and cannot conflict.
+func (s *Server) writeContext(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Append string  `json:"append"`
+		Value  *string `json:"value"`
+		Author string  `json:"author"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	who, ok := s.identify(r, req.Author)
+	if !ok {
+		writeErr(w, 401, fmt.Errorf("missing %s", s.trustHeader))
+		return
+	}
+	id, key := r.PathValue("id"), r.PathValue("key")
+
+	if req.Value != nil {
+		// If-Match carries the version the writer last saw. Absent means "no
+		// opinion" rather than "must not exist": requiring it would make the
+		// common case of a first write awkward.
+		ifMatch := int64(-1)
+		if v := r.Header.Get("If-Match"); v != "" {
+			n, err := strconv.ParseInt(strings.Trim(v, `"`), 10, 64)
+			if err != nil {
+				writeErr(w, 400, fmt.Errorf("If-Match must be a version number"))
+				return
+			}
+			ifMatch = n
+		}
+		e, err := s.mgr.SetContext(id, key, who.Author, *req.Value, ifMatch)
+		if err != nil {
+			var c *sharedctx.Conflict
+			if errors.As(err, &c) {
+				// 409 with what is current, so the caller can merge instead of
+				// re-reading and guessing what changed.
+				writeJSON(w, 409, map[string]any{
+					"error": c.Error(), "key": c.Key,
+					"current": c.Current, "version": c.Version, "by": c.By,
+				})
+				return
+			}
+			writeErr(w, statusFor(err), err)
+			return
+		}
+		writeJSON(w, 200, e)
+		return
+	}
+
+	if strings.TrimSpace(req.Append) == "" {
+		writeErr(w, 400, fmt.Errorf("send either append or value"))
+		return
+	}
+	e, err := s.mgr.AppendContext(id, key, who.Author, req.Append)
+	if err != nil {
+		writeErr(w, statusFor(err), err)
+		return
+	}
+	writeJSON(w, 200, e)
+}
+
+func (s *Server) pinContext(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Pinned *bool  `json:"pinned"`
+		Author string `json:"author"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	pinned := true
+	if req.Pinned != nil {
+		pinned = *req.Pinned
+	}
+	who, _ := s.identify(r, req.Author)
+	e, err := s.mgr.PinContext(r.PathValue("id"), r.PathValue("key"), who.Author, pinned)
+	if err != nil {
+		writeErr(w, statusFor(err), err)
+		return
+	}
+	writeJSON(w, 200, e)
 }

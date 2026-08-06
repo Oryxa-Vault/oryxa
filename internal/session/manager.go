@@ -24,6 +24,7 @@ import (
 
 	"github.com/oryxa/oryxa/internal/connector"
 	"github.com/oryxa/oryxa/internal/events"
+	"github.com/oryxa/oryxa/internal/sharedctx"
 )
 
 type State string
@@ -92,6 +93,8 @@ type session struct {
 
 	hmu     sync.Mutex
 	history []*Turn
+
+	ctx *sharedctx.Store
 
 	closed chan struct{}
 }
@@ -184,6 +187,7 @@ func (m *Manager) Create(agents ...string) (Summary, error) {
 		created: time.Now().UTC(),
 		state:   StateIdle,
 		lanes:   map[string]*lane{},
+		ctx:     sharedctx.New(),
 		closed:  make(chan struct{}),
 	}
 	for _, a := range list {
@@ -610,6 +614,7 @@ func rebuild(id string, evs []events.Event) *session {
 		id:     id,
 		state:  StateIdle,
 		lanes:  map[string]*lane{},
+		ctx:    sharedctx.New(),
 		closed: make(chan struct{}),
 	}
 	turns := map[string]*Turn{}
@@ -624,7 +629,8 @@ func rebuild(id string, evs []events.Event) *session {
 			Group  string   `json:"group"`
 			Error  string   `json:"error"`
 			Kind   string   `json:"kind"`
-			Part   string   `json:"text_part"`
+			Key    string   `json:"key"`
+			Value  string   `json:"value"`
 		}
 		if len(ev.Data) > 0 {
 			_ = json.Unmarshal(ev.Data, &d)
@@ -689,6 +695,17 @@ func rebuild(id string, evs []events.Event) *session {
 			if t := turns[ev.Turn]; t != nil {
 				t.State = TurnCancelled
 			}
+
+		// Shared context is a fold over the same log, so it comes back with
+		// everything else rather than needing its own persistence.
+		case "context.appended":
+			_, _ = s.ctx.Append(d.Key, ev.Actor, d.Text, ev.Seq, ev.TS)
+		case "context.set":
+			_, _ = s.ctx.Set(d.Key, ev.Actor, d.Value, -1, ev.Seq, ev.TS)
+		case "context.pinned":
+			_, _ = s.ctx.Pin(d.Key, true)
+		case "context.unpinned":
+			_, _ = s.ctx.Pin(d.Key, false)
 		}
 	}
 
@@ -722,4 +739,78 @@ func rebuild(id string, evs []events.Event) *session {
 		close(s.closed)
 	}
 	return s
+}
+
+// ---- shared context ----
+
+// Context returns a snapshot of the room's shared state.
+func (m *Manager) Context(id string) ([]sharedctx.Entry, bool) {
+	s, ok := m.get(id)
+	if !ok {
+		return nil, false
+	}
+	return s.ctx.Snapshot(), true
+}
+
+// AppendContext adds to an add-only entry. It cannot conflict.
+func (m *Manager) AppendContext(id, key, by, text string) (sharedctx.Entry, error) {
+	s, ok := m.get(id)
+	if !ok {
+		return sharedctx.Entry{}, ErrNoSession
+	}
+	// The event is written first so the log stays the source of truth and the
+	// entry carries the sequence number the write actually landed at.
+	ev, err := m.log.Append(s.id, "context.appended", by, "", map[string]any{
+		"key": key, "text": text,
+	})
+	if err != nil {
+		m.logFailure(s.id, "context.appended", err)
+		return sharedctx.Entry{}, err
+	}
+	return s.ctx.Append(key, by, text, ev.Seq, ev.TS)
+}
+
+// SetContext writes a value entry under optimistic concurrency. ifMatch is the
+// version the writer last saw; -1 overwrites regardless.
+func (m *Manager) SetContext(id, key, by, value string, ifMatch int64) (sharedctx.Entry, error) {
+	s, ok := m.get(id)
+	if !ok {
+		return sharedctx.Entry{}, ErrNoSession
+	}
+
+	// Check the precondition before writing an event: a refused write must not
+	// leave a record claiming it happened.
+	if cur, exists := s.ctx.Get(key); exists && ifMatch != -1 && cur.Version != ifMatch {
+		m.emit(s.id, "conflict.rejected", by, "", map[string]any{
+			"key": key, "expected": ifMatch, "current": cur.Version,
+		})
+		return sharedctx.Entry{}, &sharedctx.Conflict{
+			Key: key, Current: cur.Value, Version: cur.Version, By: cur.By,
+		}
+	}
+
+	ev, err := m.log.Append(s.id, "context.set", by, "", map[string]any{
+		"key": key, "value": value,
+	})
+	if err != nil {
+		m.logFailure(s.id, "context.set", err)
+		return sharedctx.Entry{}, err
+	}
+	return s.ctx.Set(key, by, value, -1, ev.Seq, ev.TS)
+}
+
+func (m *Manager) PinContext(id, key, by string, pinned bool) (sharedctx.Entry, error) {
+	s, ok := m.get(id)
+	if !ok {
+		return sharedctx.Entry{}, ErrNoSession
+	}
+	if _, exists := s.ctx.Get(key); !exists {
+		return sharedctx.Entry{}, sharedctx.ErrNotFound
+	}
+	kind := "context.unpinned"
+	if pinned {
+		kind = "context.pinned"
+	}
+	m.emit(s.id, kind, by, "", map[string]any{"key": key})
+	return s.ctx.Pin(key, pinned)
 }

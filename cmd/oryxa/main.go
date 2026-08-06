@@ -14,8 +14,10 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/oryxa/oryxa/internal/api"
@@ -149,10 +151,38 @@ func serve(args []string, openWindow bool) {
 		}()
 	}
 
-	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// Shut down on a signal rather than being killed mid-turn. An abrupt exit
+	// leaves running turns recorded as "outcome unknown" on the next start,
+	// which is correct but avoidable — draining first means the common case of
+	// a deploy or restart does not manufacture uncertainty.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	errc := make(chan error, 1)
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errc <- err
+		}
+	}()
+
+	select {
+	case err := <-errc:
 		fmt.Fprintf(os.Stderr, "server: %v\n", err)
 		os.Exit(1)
+	case sig := <-stop:
+		fmt.Printf("\n  %v — draining; in-flight turns finish, new input is refused\n", sig)
 	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelShutdown()
+
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		fmt.Fprintf(os.Stderr, "  shutdown timed out: %v\n", err)
+	}
+	if n := mgr.AppendFailures(); n > 0 {
+		fmt.Fprintf(os.Stderr, "  warning: %d event append(s) failed; the log is incomplete\n", n)
+	}
+	fmt.Println("  stopped")
 }
 
 // openStore picks the durable store when a DSN is given and says so plainly

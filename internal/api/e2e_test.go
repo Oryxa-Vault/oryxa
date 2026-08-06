@@ -696,3 +696,110 @@ func TestSlowAgentDoesNotBlockFastOne(t *testing.T) {
 		t.Fatalf("fast agent took %v; it waited on the slow one", fastAt)
 	}
 }
+
+// Shared context end to end: append cannot conflict, a stale value write is
+// refused with what is current, and everything survives a restart because it is
+// a fold over the same log.
+func TestSharedContextOverHTTP(t *testing.T) {
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"output":"ok"}`)
+	}))
+	defer agent.Close()
+
+	ory := newOryxa(t)
+	do(t, "POST", ory.URL+"/v1/agents", map[string]any{
+		"name": "a", "base": agent.URL,
+		"turn": map[string]any{"method": "POST", "path": "/run",
+			"response": map[string]any{"format": "json", "text": []string{"$.output"}}},
+	})
+	_, s := do(t, "POST", ory.URL+"/v1/sessions", map[string]any{"agent": "a"})
+	sid := s["id"].(string)
+	base := ory.URL + "/v1/sessions/" + sid + "/context"
+
+	t.Run("append accumulates from several people", func(t *testing.T) {
+		do(t, "POST", base+"/findings", map[string]string{"append": "postgres is fine", "author": "alice"})
+		do(t, "POST", base+"/findings", map[string]string{"append": "sqlite is simpler", "author": "bob"})
+
+		_, got := do(t, "GET", base, nil)
+		entries := got["context"].([]any)
+		var findings map[string]any
+		for _, e := range entries {
+			if m := e.(map[string]any); m["key"] == "findings" {
+				findings = m
+			}
+		}
+		if findings == nil {
+			t.Fatal("findings missing")
+		}
+		if items := findings["items"].([]any); len(items) != 2 {
+			t.Fatalf("got %d items, want 2", len(items))
+		}
+	})
+
+	t.Run("stale value write is refused with what is current", func(t *testing.T) {
+		code, first := do(t, "POST", base+"/plan", map[string]any{
+			"value": "use postgres", "author": "alice"})
+		if code != 200 {
+			t.Fatalf("first write returned %d", code)
+		}
+		v := int64(first["version"].(float64))
+
+		// A write at the version we saw succeeds.
+		req, _ := http.NewRequest("POST", base+"/plan",
+			strings.NewReader(`{"value":"postgres, WAL on","author":"bob"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("If-Match", fmt.Sprint(v))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("write at current version returned %d", resp.StatusCode)
+		}
+
+		// A write at the stale version is refused, and says what is current.
+		req2, _ := http.NewRequest("POST", base+"/plan",
+			strings.NewReader(`{"value":"use sqlite","author":"carol"}`))
+		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("If-Match", fmt.Sprint(v))
+		resp2, err := http.DefaultClient.Do(req2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp2.Body.Close()
+		if resp2.StatusCode != 409 {
+			t.Fatalf("stale write returned %d, want 409", resp2.StatusCode)
+		}
+		var conflict map[string]any
+		_ = json.NewDecoder(resp2.Body).Decode(&conflict)
+		if conflict["current"] != "postgres, WAL on" {
+			t.Fatalf("409 must carry the current value, got %v", conflict)
+		}
+	})
+
+	t.Run("conflicts are recorded, not just returned", func(t *testing.T) {
+		_, evs := do(t, "GET", ory.URL+"/v1/sessions/"+sid+"/events", nil)
+		found := false
+		for _, e := range evs["events"].([]any) {
+			if e.(map[string]any)["kind"] == "conflict.rejected" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("a rejected write left no trace in the log")
+		}
+	})
+
+	t.Run("pinning marks the curated subset", func(t *testing.T) {
+		if code, _ := do(t, "POST", base+"/plan/pin", map[string]any{"pinned": true}); code != 200 {
+			t.Fatalf("pin returned %d", code)
+		}
+		_, got := do(t, "GET", base, nil)
+		for _, e := range got["context"].([]any) {
+			if m := e.(map[string]any); m["key"] == "plan" && m["pinned"] != true {
+				t.Fatal("plan did not stay pinned")
+			}
+		}
+	})
+}
