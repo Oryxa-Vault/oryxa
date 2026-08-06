@@ -18,11 +18,12 @@ import (
 )
 
 type Server struct {
-	reg   *connector.Registry
-	exec  *connector.Executor
-	mgr   *session.Manager
-	log   events.Store
-	token string
+	reg         *connector.Registry
+	exec        *connector.Executor
+	mgr         *session.Manager
+	log         events.Store
+	token       string
+	trustHeader string
 }
 
 func New(reg *connector.Registry, exec *connector.Executor, mgr *session.Manager, log events.Store) *Server {
@@ -32,6 +33,13 @@ func New(reg *connector.Registry, exec *connector.Executor, mgr *session.Manager
 // WithToken guards the API with a shared token. Empty leaves it open.
 func (s *Server) WithToken(token string) *Server {
 	s.token = token
+	return s
+}
+
+// WithTrustedHeader takes the acting user from a header set by whatever runs in
+// front of Oryxa. Empty leaves authors self-declared.
+func (s *Server) WithTrustedHeader(h string) *Server {
+	s.trustHeader = h
 	return s
 }
 
@@ -193,10 +201,12 @@ func (s *Server) submitInput(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, fmt.Errorf("text is required"))
 		return
 	}
-	if req.Author == "" {
-		req.Author = "anonymous"
+	who, ok := s.identify(r, req.Author)
+	if !ok {
+		writeErr(w, 401, fmt.Errorf("missing %s; this request did not come through the trusted proxy", s.trustHeader))
+		return
 	}
-	t, err := s.mgr.Submit(r.PathValue("id"), req.Author, req.Text)
+	t, err := s.mgr.Submit(r.PathValue("id"), who.Author, req.Text)
 	if err != nil {
 		writeErr(w, statusFor(err), err)
 		return
@@ -205,8 +215,12 @@ func (s *Server) submitInput(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) withdrawInput(w http.ResponseWriter, r *http.Request) {
-	actor := r.URL.Query().Get("author")
-	if err := s.mgr.Withdraw(r.PathValue("id"), r.PathValue("tid"), actor); err != nil {
+	who, ok := s.identify(r, r.URL.Query().Get("author"))
+	if !ok {
+		writeErr(w, 401, fmt.Errorf("missing %s", s.trustHeader))
+		return
+	}
+	if err := s.mgr.Withdraw(r.PathValue("id"), r.PathValue("tid"), who.Author); err != nil {
 		writeErr(w, statusFor(err), err)
 		return
 	}
@@ -214,7 +228,8 @@ func (s *Server) withdrawInput(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cancelTurn(w http.ResponseWriter, r *http.Request) {
-	if err := s.mgr.Cancel(r.PathValue("id"), r.URL.Query().Get("author")); err != nil {
+	who, _ := s.identify(r, r.URL.Query().Get("author"))
+	if err := s.mgr.Cancel(r.PathValue("id"), who.Author); err != nil {
 		writeErr(w, statusFor(err), err)
 		return
 	}
@@ -222,7 +237,8 @@ func (s *Server) cancelTurn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) closeSession(w http.ResponseWriter, r *http.Request) {
-	if err := s.mgr.Close(r.PathValue("id"), r.URL.Query().Get("author")); err != nil {
+	who, _ := s.identify(r, r.URL.Query().Get("author"))
+	if err := s.mgr.Close(r.PathValue("id"), who.Author); err != nil {
 		writeErr(w, statusFor(err), err)
 		return
 	}

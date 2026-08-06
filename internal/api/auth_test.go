@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -149,5 +150,96 @@ func TestUnauthorizedAdvertisesBearer(t *testing.T) {
 	defer resp.Body.Close()
 	if h := resp.Header.Get("WWW-Authenticate"); !strings.Contains(h, "Bearer") {
 		t.Fatalf("WWW-Authenticate = %q, want a Bearer challenge", h)
+	}
+}
+
+// Identity comes from whatever runs in front of Oryxa. These tests pin the two
+// properties that make that safe: a spoofed body author cannot override the
+// proxy, and a request that skipped the proxy is refused rather than treated as
+// anonymous.
+func trusted(t *testing.T, header string) *httptest.Server {
+	t.Helper()
+	reg := connector.NewRegistry()
+	log := events.NewMemory()
+	exec := connector.NewExecutor()
+	mgr := session.NewManager(reg, exec, log)
+	srv := httptest.NewServer(
+		New(reg, exec, mgr, log).WithTrustedHeader(header).Routes())
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestTrustedHeaderOverridesClaimedAuthor(t *testing.T) {
+	srv := trusted(t, "X-Forwarded-User")
+
+	// A registered agent and session, so input can be submitted.
+	do(t, "POST", srv.URL+"/v1/agents", map[string]any{
+		"name": "a", "base": "http://127.0.0.1:1",
+		"turn": map[string]any{"method": "POST", "path": "/x"},
+	})
+	_, s := do(t, "POST", srv.URL+"/v1/sessions", map[string]any{"agent": "a"})
+	sid := s["id"].(string)
+
+	body, _ := json.Marshal(map[string]string{"text": "hi", "author": "impostor"})
+	req, _ := http.NewRequest("POST", srv.URL+"/v1/sessions/"+sid+"/input",
+		strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-User", "alice@example.com")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 202 {
+		t.Fatalf("submit returned %d", resp.StatusCode)
+	}
+	var turn map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&turn)
+	if turn["author"] != "alice@example.com" {
+		t.Fatalf("author = %v; the body must not be able to override the proxy", turn["author"])
+	}
+}
+
+func TestMissingTrustedHeaderIsRefused(t *testing.T) {
+	srv := trusted(t, "X-Forwarded-User")
+	do(t, "POST", srv.URL+"/v1/agents", map[string]any{
+		"name": "a", "base": "http://127.0.0.1:1",
+		"turn": map[string]any{"method": "POST", "path": "/x"},
+	})
+	_, s := do(t, "POST", srv.URL+"/v1/sessions", map[string]any{"agent": "a"})
+	sid := s["id"].(string)
+
+	// No header: the request did not come through the proxy. Treating that as
+	// anonymous would silently accept exactly what the proxy exists to prevent.
+	code, _ := do(t, "POST", srv.URL+"/v1/sessions/"+sid+"/input",
+		map[string]string{"text": "hi", "author": "alice"})
+	if code != 401 {
+		t.Fatalf("submit without the trusted header returned %d, want 401", code)
+	}
+}
+
+func TestWithoutTrustHeaderAuthorsStaySelfDeclared(t *testing.T) {
+	srv := trusted(t, "")
+	var st map[string]any
+	_, st = do(t, "GET", srv.URL+"/v1/auth/status", nil)
+	if st["identity"] != "claimed" {
+		t.Fatalf("identity = %v, want claimed", st["identity"])
+	}
+}
+
+func TestAuthStatusReportsTrustedIdentity(t *testing.T) {
+	srv := trusted(t, "X-Forwarded-User")
+	req, _ := http.NewRequest("GET", srv.URL+"/v1/auth/status", nil)
+	req.Header.Set("X-Forwarded-User", "bob@example.com")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var st map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&st)
+	if st["identity"] != "trusted" || st["author"] != "bob@example.com" {
+		t.Fatalf("status = %v; the viewer needs this to stop asking for a name", st)
 	}
 }

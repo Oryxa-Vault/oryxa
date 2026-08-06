@@ -518,6 +518,17 @@ async function start() {
     return;
   }
   $('#signin').style.display = 'none';
+
+  // When a proxy in front of Oryxa establishes identity, the name field is not
+  // ours to edit — showing an editable box would imply a choice that isn't there.
+  if (status.identity === 'trusted' && status.author) {
+    const who = $('#who');
+    who.value = status.author;
+    who.readOnly = true;
+    who.title = 'set by your organisation\u2019s sign-in';
+    who.style.opacity = '.7';
+  }
+
   poll();
   setInterval(poll, 3000);
 }

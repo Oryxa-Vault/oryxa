@@ -73,6 +73,9 @@ func serve(args []string, openWindow bool) {
 		"postgres DSN; in-memory if empty (nothing survives a restart)")
 	token := fs.String("token", os.Getenv("ORYXA_TOKEN"),
 		"shared token guarding the API; open to anyone who can reach the port if empty")
+	trustHeader := fs.String("trust-header", os.Getenv("ORYXA_TRUST_HEADER"),
+		"take the acting user from this header, set by your proxy (e.g. X-Forwarded-User); "+
+			"only safe when nothing can reach this port except that proxy")
 	_ = fs.Parse(args)
 
 	reg := connector.NewRegistry()
@@ -98,7 +101,9 @@ func serve(args []string, openWindow bool) {
 		os.Exit(1)
 	}
 
-	srv := api.New(reg, exec, mgr, log).WithToken(*token)
+	srv := api.New(reg, exec, mgr, log).
+		WithToken(*token).
+		WithTrustedHeader(*trustHeader)
 
 	httpSrv := &http.Server{
 		Addr:              *addr,
@@ -116,6 +121,11 @@ func serve(args []string, openWindow bool) {
 		fmt.Printf("  ├─ auth        none — anyone who can reach %s has full access\n", *addr)
 	} else {
 		fmt.Printf("  ├─ auth        shared token\n")
+	}
+	if *trustHeader == "" {
+		fmt.Printf("  ├─ identity    self-declared — the log records claims, not people\n")
+	} else {
+		fmt.Printf("  ├─ identity    from %s (bind privately; this header is spoofable)\n", *trustHeader)
 	}
 	fmt.Printf("  └─ connectors  %d loaded from %s\n\n", n, *dir)
 	if recovered > 0 {

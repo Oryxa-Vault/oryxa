@@ -74,6 +74,13 @@ a session was already a fold over its events. A turn that was *running* when the
 process died is marked interrupted rather than re-run: the agent may have finished
 it, and doing the work twice is worse than admitting the outcome is unknown.
 
+**Identity.** Taken from a header set by whatever runs in front of Oryxa —
+`-trust-header X-Forwarded-User` and friends. There are deliberately no accounts:
+deployments already have identity, and building it here would repeat the
+orchestration mistake. The body cannot override the header, and a request that
+skipped the proxy is refused rather than treated as anonymous. Unset, authors are
+self-declared and the banner says so.
+
 **Auth.** One shared token, constant-time compared. `Authorization: Bearer` for
 clients; the viewer exchanges it for an HttpOnly cookie because `EventSource`
 cannot set headers and the stream needs authenticating too. Off by default, and
@@ -104,11 +111,10 @@ answer), and one agent failing without taking the room down.
 | **Shared context** | `log` / `state` regions with optimistic concurrency — designed in [08-sessions-context.md](design/08-sessions-context.md), not implemented |
 | **Collaboration tool** | `post` / `ask` / `read` / `write` — the agent talking back to the room mid-turn |
 | **Presence** | who is here, who is typing |
-| **Per-person identity** | the API token is shared, so the log records who *said* they were alice, not who they are |
 | **Cancel** | in the spec and the session API, no connector declares it and it is unexercised end to end |
 
-Per-person identity is the one that matters next: attribution is the point of the
-log, and a shared token means it records a claim rather than a fact.
+None of these is blocked. Shared context is the largest and the one the design
+already covers in detail.
 
 ---
 
@@ -143,6 +149,8 @@ Questions this project actually answered, rather than guessed:
   yes — they persist. The re-open path is unimplemented and so far untriggered.
 - **Does CrewAI bypass its configured LLM object?** Only with `planning=True`.
   The broad claim was wrong; `planning_llm` fixes it.
+- **Should Oryxa own user identity?** No. It accepts identity, it does not
+  establish it — the same line already drawn around orchestration and prompts.
 
 ---
 
@@ -150,7 +158,7 @@ Questions this project actually answered, rather than guessed:
 
 1. **Shared context** — regions and OCC, per [08](design/08-sessions-context.md).
 2. **Collaboration tool** — `post` and `ask` make the room conversational.
-3. **Per-person identity** — so the log records who acted, not who claimed to.
+3. **Presence** — who is here, who is typing.
 
 **Not next: NATS.** It would fan events across processes, but sessions are
 stateful — one goroutine per session *is* the serialization point, so two

@@ -235,6 +235,14 @@ timeout: 5m                                 # default 5m; raise it for slow crew
 Secrets belong in the server's environment, referenced with `{{env.X}}` — not in
 the connector file.
 
+### Who Oryxa says is talking
+
+Input carries an author. By default it is whatever the caller claims. Run the
+server with `-trust-header X-Forwarded-User` (or whichever header your proxy
+sets) and it comes from there instead, so the log records people rather than
+claims. Oryxa has no accounts of its own on purpose — your deployment already
+has identity.
+
 ---
 
 ## When it doesn't work

@@ -151,7 +151,27 @@ in through the viewer — which exchanges it for an HttpOnly cookie, because
 Without it, anyone who can reach the port has full access, and the server says
 that at startup as well.
 
-Both default to off so the two-minute quickstart stays two minutes. Neither
+**`-trust-header`** decides who is acting. Oryxa deliberately has no accounts —
+your deployment already has identity, and duplicating it here would be the same
+mistake as duplicating orchestration. Point it at the header your proxy already
+sets and the log records people instead of claims:
+
+```bash
+oryxa serve -trust-header X-Forwarded-User   # oauth2-proxy, Pomerium,
+                                             # Cloudflare Access, ALB, Istio…
+```
+
+The body cannot override it, and a request that skipped the proxy is **refused**
+rather than treated as anonymous — treating it as anonymous would accept exactly
+what the proxy exists to prevent.
+
+> Only safe when nothing can reach the port except that proxy. Bind to localhost
+> or a private network; a header is spoofable by anyone who can connect directly.
+
+Unset, authors stay self-declared, and the startup banner says so:
+`identity  self-declared — the log records claims, not people`.
+
+All three default to off so the two-minute quickstart stays two minutes. None
 should be off anywhere else.
 
 ## Endpoints
@@ -224,8 +244,7 @@ go test -race ./...
 ## Not built yet
 
 Shared context (`log` / `state` regions, OCC), the collaboration tool
-(`post` / `ask` / `read` / `write`), presence, per-person identity (the token is
-shared, so the log records who *said* they were alice, not who they are).
+(`post` / `ask` / `read` / `write`), presence.
 
 Design docs are in `design/`; [`PLAN.md`](PLAN.md) is the source of truth.
 

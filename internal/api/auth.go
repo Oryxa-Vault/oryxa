@@ -99,9 +99,53 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	if s.token != "" {
 		mode = "token"
 	}
-	writeJSON(w, 200, map[string]any{"mode": mode, "authed": s.authed(r)})
+	out := map[string]any{"mode": mode, "authed": s.authed(r), "identity": "claimed"}
+	if s.trustHeader != "" {
+		out["identity"] = "trusted"
+		if who, ok := s.identify(r, ""); ok {
+			out["author"] = who.Author
+		}
+	}
+	writeJSON(w, 200, out)
 }
 
 func decodeJSONBody(r *http.Request, v any) error {
 	return json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(v)
+}
+
+// ---- who is acting ----
+
+// Identity is established by whatever already runs in front of Oryxa, not by
+// Oryxa. Deployments have SSO, a reverse proxy, an internal gateway; building
+// accounts here would duplicate that badly and everyone would route around it.
+//
+// So: set -trust-header to the header your proxy already sets
+// (X-Forwarded-User, X-Auth-Request-Email, Cf-Access-Authenticated-User-Email…)
+// and the log records who acted. Leave it unset and authors stay self-declared,
+// which the log says plainly rather than implying otherwise.
+//
+// SAFETY: a trusted header is only trustworthy if nothing can reach Oryxa
+// except that proxy. Bind to localhost or a private network. Exposing the port
+// publicly with this on lets anyone claim to be anyone — which is why it is
+// opt-in and why a missing header is rejected rather than treated as anonymous.
+type Identity struct {
+	Author string
+	Source string // "trusted" or "claimed"
+}
+
+// identify resolves who is acting. The bool is false when a trusted header is
+// required but absent — meaning the request did not come through the proxy.
+func (s *Server) identify(r *http.Request, claimed string) (Identity, bool) {
+	if s.trustHeader == "" {
+		author := strings.TrimSpace(claimed)
+		if author == "" {
+			author = "anonymous"
+		}
+		return Identity{Author: author, Source: "claimed"}, true
+	}
+	got := strings.TrimSpace(r.Header.Get(s.trustHeader))
+	if got == "" {
+		return Identity{}, false
+	}
+	return Identity{Author: got, Source: "trusted"}, true
 }
