@@ -96,6 +96,13 @@ type session struct {
 
 	ctx *sharedctx.Store
 
+	// Serialises the read-check-write of a value entry. The version check and
+	// the write are separate operations with a log append between them, so
+	// without this two writers holding the same version both pass the check and
+	// both write — the lost update optimistic concurrency exists to prevent.
+	// Per session, so different rooms never block each other.
+	ctxWrite sync.Mutex
+
 	closed chan struct{}
 }
 
@@ -777,6 +784,9 @@ func (m *Manager) SetContext(id, key, by, value string, ifMatch int64) (sharedct
 	if !ok {
 		return sharedctx.Entry{}, ErrNoSession
 	}
+
+	s.ctxWrite.Lock()
+	defer s.ctxWrite.Unlock()
 
 	// Check the precondition before writing an event: a refused write must not
 	// leave a record claiming it happened.
