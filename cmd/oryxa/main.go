@@ -1,8 +1,4 @@
 // Command oryxa runs the Oryxa server and its tooling.
-//
-//	oryxa serve                 start the server (API + viewer)
-//	oryxa check <agent>         probe a connector with a real turn
-//	oryxa launch window         start the server and open the viewer
 package main
 
 import (
@@ -16,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -26,42 +23,138 @@ import (
 	"github.com/oryxa/oryxa/internal/session"
 )
 
+// version is set at build time:
+//
+//	go build -ldflags "-X main.version=v0.2.0"
+//
+// Left as "dev" it falls back to the VCS stamp Go records automatically, so a
+// `go install` from source still reports something specific.
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
 	}
-	switch os.Args[1] {
-	case "serve":
-		serve(os.Args[2:], false)
-	case "launch":
-		launch(os.Args[2:])
-	case "check":
-		check(os.Args[2:])
+	cmd, args := os.Args[1], os.Args[2:]
+
+	// -v / --version work in the leading position too, which is where people
+	// reach for them.
+	switch cmd {
+	case "-v", "--version", "-version", "version":
+		fmt.Println(versionString())
+		return
 	case "-h", "--help", "help":
 		usage()
+		return
+	}
+
+	switch cmd {
+	// server
+	case "serve":
+		serve(args, false)
+	case "launch":
+		launch(args)
+
+	// connectors — these read files and need no running server
+	case "agents":
+		cmdAgents(args)
+	case "which":
+		cmdWhich(args)
+	case "check":
+		check(args)
+
+	// rooms — these talk to a running server
+	case "sessions":
+		cmdSessions(args)
+	case "open":
+		cmdOpen(args)
+	case "send":
+		cmdSend(args)
+	case "tail":
+		cmdTail(args)
+	case "replay":
+		cmdReplay(args)
+	case "context":
+		cmdContext(args)
+
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
 		usage()
 		os.Exit(2)
 	}
 }
 
+func versionString() string {
+	v := version
+	if v == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			var rev, dirty string
+			for _, s := range info.Settings {
+				switch s.Key {
+				case "vcs.revision":
+					if len(s.Value) >= 12 {
+						rev = s.Value[:12]
+					}
+				case "vcs.modified":
+					if s.Value == "true" {
+						dirty = "-dirty"
+					}
+				}
+			}
+			if rev != "" {
+				v = "dev+" + rev + dirty
+			}
+		}
+	}
+	return fmt.Sprintf("oryxa %s (%s/%s, %s)", v, runtime.GOOS, runtime.GOARCH, runtime.Version())
+}
+
 func usage() {
 	fmt.Print(`oryxa — many people, one agent
 
+  Puts your existing agents in a shared session several people can watch and
+  talk to. Nothing about the agents changes.
+
 Usage:
-  oryxa serve [-addr :8080] [-connectors ./connectors] [-db DSN] [-token TOKEN]
-      Start the server. API and viewer on the same port. Without -db the event
-      log is in-memory and nothing survives a restart. Without -token the API is
-      open to anyone who can reach the port.
+  oryxa <command> [flags]
 
-  oryxa launch window [-addr :8080] [-connectors ./connectors]
-      Start the server and open the viewer in a browser.
+Server
+  serve                 run the API and viewer
+  launch window         run and open the viewer in a browser
 
-  oryxa check <agent> [-connectors ./connectors]
-      Probe a connector with a real turn and report what came back.
-      Needs no running server.
+Connectors                                    (read files; no server needed)
+  agents                list configured connectors
+  which <agent>         where a connector points, and which file said so
+  check <agent>         probe an agent with a real turn
+
+Rooms                                         (talk to a running server)
+  open <agent>...       start a session with one or more agents
+  send <session> TEXT   say something to the room
+  tail <session>        follow the live stream
+  replay <session>      print the history
+  sessions              list sessions
+  context <session>     read or write shared context
+
+Other
+  version               print the version
+  help                  this
+
+Common flags
+  -connectors DIR       connector directory        (ORYXA_CONNECTORS)
+  -server URL           a running Oryxa            (ORYXA_URL)
+  -token TOKEN          API token                  (ORYXA_TOKEN)
+  -json                 machine-readable output
+
+Serve flags
+  -addr :8080           listen address
+  -db DSN               postgres; in-memory if unset  (ORYXA_DATABASE_URL)
+  -token TOKEN          require this token            (ORYXA_TOKEN)
+  -trust-header HEADER  identity from your proxy      (ORYXA_TRUST_HEADER)
+
+Run  oryxa <command> -h  for a command's own flags.
+
+  https://github.com/oryxa/oryxa
 `)
 }
 
@@ -70,7 +163,7 @@ Usage:
 func serve(args []string, openWindow bool) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", ":8080", "listen address")
-	dir := fs.String("connectors", "./connectors", "directory of connector files")
+	dir := connectorsFlag(fs)
 	dsn := fs.String("db", os.Getenv("ORYXA_DATABASE_URL"),
 		"postgres DSN; in-memory if empty (nothing survives a restart)")
 	token := fs.String("token", os.Getenv("ORYXA_TOKEN"),
@@ -80,12 +173,7 @@ func serve(args []string, openWindow bool) {
 			"only safe when nothing can reach this port except that proxy")
 	_ = fs.Parse(args)
 
-	// Connectors reference {{env.ORYXA_AGENT_HOST}} so one file works on a host
-	// and in a container. Default to localhost so a plain `oryxa serve` needs no
-	// environment at all.
-	if os.Getenv("ORYXA_AGENT_HOST") == "" {
-		os.Setenv("ORYXA_AGENT_HOST", "localhost")
-	}
+	defaultAgentHost()
 
 	reg := connector.NewRegistry()
 	n, err := reg.LoadDir(*dir)
@@ -122,7 +210,7 @@ func serve(args []string, openWindow bool) {
 	}
 
 	url := browserURL(*addr)
-	fmt.Printf("\n  oryxa\n")
+	fmt.Printf("\n  oryxa %s\n", version)
 	fmt.Printf("  ├─ viewer      %s\n", url)
 	fmt.Printf("  ├─ api         %s/v1\n", url)
 	fmt.Printf("  ├─ store       %s\n", storeKind)
@@ -240,20 +328,18 @@ func launch(args []string) {
 // ---- check ----
 
 func check(args []string) {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fmt.Fprintln(os.Stderr, "usage: oryxa check <agent> [-connectors ./connectors]")
+	fs := flag.NewFlagSet("check", flag.ExitOnError)
+	dir := connectorsFlag(fs)
+	probe := fs.String("probe", "ping from oryxa check", "probe text")
+
+	pos := parseArgs(fs, args)
+	if len(pos) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: oryxa check <agent> [-probe text] [-connectors DIR]")
 		os.Exit(2)
 	}
-	name := args[0]
+	name := pos[0]
 
-	fs := flag.NewFlagSet("check", flag.ExitOnError)
-	dir := fs.String("connectors", "./connectors", "directory of connector files")
-	probe := fs.String("probe", "ping from oryxa check", "probe text")
-	_ = fs.Parse(args[1:])
-
-	if os.Getenv("ORYXA_AGENT_HOST") == "" {
-		os.Setenv("ORYXA_AGENT_HOST", "localhost")
-	}
+	defaultAgentHost()
 	reg := connector.NewRegistry()
 	if _, err := reg.LoadDir(*dir); err != nil {
 		fmt.Fprintf(os.Stderr, "loading connectors: %v\n", err)

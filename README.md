@@ -130,10 +130,63 @@ and no new spec feature was needed for any of it.
 
 ## Commands
 
+```bash
+go install ./cmd/oryxa      # or: go build -o oryxa ./cmd/oryxa
 ```
-oryxa serve            API + viewer on one port
-oryxa launch window    the same, and opens a browser
-oryxa check <agent>    probe a connector with a real turn; no server needed
+
+**Server**
+
+```
+oryxa serve                 run the API and viewer
+oryxa launch window         run and open the viewer in a browser
+```
+
+**Connectors** — read files, so they work before anything is running
+
+```
+oryxa agents                list configured connectors
+oryxa which <agent>         where a connector points, and which file said so
+oryxa check <agent>         probe an agent with a real turn
+```
+
+**Rooms** — talk to a running server
+
+```
+oryxa open <agent>...       start a session
+oryxa send <session> TEXT   say something   (-as name, -f to follow)
+oryxa tail <session>        follow the live stream
+oryxa replay <session>      print the history
+oryxa sessions              list sessions
+oryxa context <session>     read or write shared context
+```
+
+Every command takes `-json` for scripting. Room commands take `-server` and
+`-token`, falling back to `ORYXA_URL` and `ORYXA_TOKEN`. Connector commands take
+`-connectors`, falling back to `ORYXA_CONNECTORS`.
+
+A whole session from the shell:
+
+```bash
+SID=$(oryxa open langgraph crewai -json | jq -r .id)
+oryxa send $SID "should we use event sourcing?" -f
+oryxa context $SID -append decisions -value "revisit after the spike"
+oryxa replay $SID
+```
+
+`oryxa which` exists because `base` is templated — the same connector resolves
+differently on a machine and in a container, and *"it works in my shell but not
+in the server"* is otherwise a confusing afternoon:
+
+```
+  langgraph
+
+  file         connectors/langgraph.yaml
+  base         http://{{env.ORYXA_AGENT_HOST}}:2024
+  resolves to  http://localhost:2024
+  turn         POST /threads/{{handle}}/runs/stream
+  open         POST /threads
+
+  ORYXA_AGENT_HOST=localhost — a containerised server resolves this differently
 ```
 
 ## Running it for real
