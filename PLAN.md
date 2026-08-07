@@ -141,12 +141,15 @@ answer), and one agent failing without taking the room down.
 |---|---|
 | **Read scoping** | one token opens every session; there is no participant concept anywhere. This is what makes the framework laptop-safe rather than deployable, and it is now the largest gap. |
 | **Mid-turn writes** | rules apply when a turn finishes. An agent that wants to publish a finding *while* still working would need a callback — `{{callback_url}}` exists in the template context but nothing populates it yet. |
-| **Presence** | who is here, who is typing |
+| **Presence** | who is here, who is typing. Now load-bearing rather than cosmetic: owner precedence in §7.4 is built on it. |
+| **Participants** | agents have no owners. Read scoping, owner-waking and directed output all wait on this one idea — see §7.2. |
+| **Addressing** | every input wakes every agent; there is no way to speak to one. §7 replaces the fan-out rather than patching it. |
 | **Context rollup** | the render bound keeps a list's newest 20 items and says how many it dropped. Nothing merges, deduplicates or summarises what falls off, so a long room's early findings simply stop reaching prompts. Summarising would have to be a logged event carrying its own output — a summary cannot be recomputed on replay, so recomputing it would give a different room after every restart. |
 | **Hash chaining** | events are ordered and attributed but not tamper-evident. Chaining each event to its predecessor's hash would make the log verifiable rather than merely durable — worth having before anyone treats it as an audit record. |
 | **Usage accounting** | `turn.started` records what the *room* cost a prompt in characters, which is a different thing from what the *model* charged. No event carries token counts, so cost per turn cannot be derived from the log. |
 
-Read scoping is the one that blocks real use. The other five are additive.
+Read scoping is the one that blocks real use. Participants is the one the most
+other things wait on — see §7.
 
 Cancel is no longer unexercised: `TestCancelledTurnWritesNothing` drives it end
 to end. What remains untested is the capability path, where the agent is told to
@@ -193,11 +196,160 @@ Questions this project actually answered, rather than guessed:
 
 ---
 
-## 7. Next
+## 7. Next: rooms with more than four people in them
 
-1. **Shared context** — regions and OCC, per [08](design/08-sessions-context.md).
-2. **Collaboration tool** — `post` and `ask` make the room conversational.
-3. **Presence** — who is here, who is typing.
+Everything below follows from one observation, which is that Oryxa currently
+conflates two different acts.
+
+**Listening and speaking are not the same thing.** Today a turn is both: an agent
+cannot be in a room without answering, so every input fans out to every agent.
+That is survivable at four and absurd at thirty-six — six people with six agents
+apiece produce 216 turns for one round of chat, each lane runs them serially, and
+because people type faster than models answer, the backlog grows without bound.
+
+The instinct to fix this by making agents faster or queues smarter is wrong. In
+any conversation the listener is behind the speaker; that is not a defect, it is
+what listening is. Nobody in a group chat is "behind" — they are reading. The
+defect is that Oryxa gives no way to read.
+
+### 7.1 Cursors instead of fan-out
+
+Reception becomes free and universal; production becomes a decision.
+
+Each participant keeps a **cursor** — where they last spoke from — instead of a
+queue. `Submit` appends one event rather than building N turns. A participant
+that does not speak does nothing at all, and carries no pending work. When it
+does speak, its turn covers everything since its cursor.
+
+| | today | with cursors |
+|---|---|---|
+| on submit | N turns into N lanes | one event |
+| a silent agent | a queued turn it will run later | nothing |
+| when it speaks | replays its backlog turn by turn | one turn, everything since its cursor |
+| cost | messages × agents | wake decisions |
+
+A backlog cannot accumulate because there is no per-agent work queue to hold one.
+This also removes the need for a separate transcript binding: what a turn is
+built *from* is the log between the cursor and now.
+
+### 7.2 Participants
+
+Agents belong to people. Missing entirely today — identity is a per-message
+author string and nothing else.
+
+This is one idea that three separate things are waiting on: read scoping (the
+largest gap in §4), waking an agent because its *owner* was addressed, and
+directed output below. Worth building once, deliberately, rather than three
+times in three shapes.
+
+### 7.3 The wake ladder
+
+With reception free, one question remains, and it is the only judgment the
+framework makes on its own behalf: **when this lands, who speaks?**
+
+Cheapest rung first, because most cases never need the expensive one:
+
+1. **Explicit** — `@legal-head`, or `to:` on the input
+2. **Named** — the agent's name, or its owner's name, appears
+3. **Declared interest** — the connector says what it engages on
+4. **Semantic** — embed the message once, compare against precomputed agent
+   descriptions; one call per round regardless of roster size
+5. **Router** — a model chooses within the shortlist
+
+Interests inherit, because org structure is the normal case:
+
+```yaml
+name: legal
+kind: group
+interests: [contract, liability, nda, compliance]
+
+name: legal-head
+owner: priya
+groups: [legal]
+rank: head
+interests: [exposure, litigation]   # additive to the group's
+```
+
+Keywords answer **which group**. They cannot answer **who within it**, and the
+head/intern pair is the proof: both match `contract` correctly and only one
+should speak. That distinction is about the stakes of the question rather than
+its vocabulary, which is exactly the shape a model is good at and a keyword is
+not. So rung 5 runs on a shortlist of two or three, never the whole roster.
+
+`rank` stays a declared string, not an ordered hierarchy. Ordering it invites
+automatic escalation — "the intern answered badly, so the head speaks now" — and
+that is a different feature with its own failure modes.
+
+**The router is a connector.** Same spec, same executor, same templating; `base`
+points at whatever model endpoint you like. Oryxa gains a router *slot*, not an
+LLM dependency, so it still runs with no API key: unconfigured, rung 5 degrades
+to waking the whole shortlist, which is strictly better than today because rungs
+1–4 already narrowed it. Its decisions are emitted as `routing.decided` events
+carrying candidates, scores and reason — a model choosing who speaks is otherwise
+the most opaque thing in the system, and as an event it becomes the most
+inspectable.
+
+The router call costs no wall-clock. Agents are a turn behind by design, so it
+runs inside a window we already accepted.
+
+### 7.4 Owner precedence
+
+A wake targets Arsh's legal agent. Arsh is in the room, and starts typing.
+
+The agent must not race him. Two answers to one question, one of them from
+software wearing his name, is the failure that makes a room feel hostile rather
+than staffed.
+
+```yaml
+name: legal-associate
+owner: arsh
+groups: [legal]
+
+owner_present:
+  defer_when: typing      # typing | present | never
+  then: assist            # yield | assist | wait
+  hold: 30s
+```
+
+- **yield** — stay silent; the room is the owner's
+- **assist** — draft privately to the owner, who sends, edits or ignores it
+- **wait** — hold, then answer the room only if the owner does not
+
+Presence should also hold the *room*, not just the owner's own agent: if the
+person being indicated at is typing, other agents pause a beat too. That is
+ordinary turn-taking, and a room without it talks over people.
+
+Two notes on what this costs:
+
+**`assist` needs a primitive we do not have.** Output today is always a room
+event. A draft is output addressed to one person, which cannot ship before read
+scoping — a private draft everyone can read is not a draft, it is a lie with
+extra steps. `yield` and `wait` need only presence.
+
+**The race is already solvable.** Arsh types at t=0, his agent was woken at t=0
+and takes 8s, Arsh sends at t=6. `Cancel` exists and is exercised end to end;
+an owner sending cancels their own agent's deferred turn.
+
+### 7.5 What the log is worth
+
+Routing on message text is commodity — anyone can call a model. What no one else
+has is the log: who was asked, who answered, whether it was escalated, whether a
+human corrected it, whether the critic's objection held.
+
+Separating listening from speaking is what makes that data exist at all. If every
+agent answers everything there is no signal in participation; once silence is a
+choice, the log records who chose to listen and was right to, and who stayed
+quiet on something they should have taken. Feeding that back into rung 5 is the
+second iteration, not the first — the history has to accumulate before it is
+worth reading.
+
+### Order
+
+Participants first, since read scoping, owner-waking and directed output all wait
+on it. Then cursors, which is the change that makes the rest affordable. Then the
+free rungs of the ladder, measured before anything semantic is added. Presence
+and owner precedence after that, with `assist` last because it needs read scoping
+to be honest.
 
 **Not next: NATS.** It would fan events across processes, but sessions are
 stateful — one goroutine per session *is* the serialization point, so two
