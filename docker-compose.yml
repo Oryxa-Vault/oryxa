@@ -37,6 +37,10 @@ services:
       # Connectors use {{env.ORYXA_AGENT_HOST}}, so the same files work here and
       # on a host. Agents on the host machine are reachable at this name.
       ORYXA_AGENT_HOST: ${ORYXA_AGENT_HOST:-host.docker.internal}
+      # Development: erase every session on start, so a restart gives you an
+      # empty board instead of every room you were already finished with. It
+      # deletes the durable log — leave it unset anywhere the history matters.
+      ORYXA_RESET: ${ORYXA_RESET:-}
     volumes:
       # Your connectors. Edit them on the host; restart to reload.
       - ./connectors:/connectors:ro

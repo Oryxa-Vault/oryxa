@@ -7,6 +7,9 @@
 //	POST /apps/{app}/users/{user}/sessions/{id}   open   -> {"id": "..."}
 //	POST /run_sse                                 turn   -> SSE, nested parts
 //	POST /invoke                                  turn   -> one JSON object
+//
+// Both turn shapes end with a `summary` object carrying named fields, so a
+// shared-context rule has something narrower than the prose to point at.
 package main
 
 import (
@@ -53,7 +56,22 @@ func main() {
 			}
 			time.Sleep(*delay)
 		}
-		fmt.Fprint(w, "data: {\"turn_complete\":true}\n\n")
+		// A final chunk carrying structure, not just prose.
+		//
+		// Real frameworks commonly end a stream with an aggregated message that
+		// has named fields, and shared-context rules are meant to read those:
+		// `from: $.summary.headline` cannot drift the way `from: $text` can,
+		// because it names one field instead of taking whatever the agent last
+		// said. Without something like this the mock could only demonstrate the
+		// pattern the docs tell you to grow out of.
+		final, _ := json.Marshal(map[string]any{
+			"turn_complete": true,
+			"summary": map[string]any{
+				"headline": headline(text),
+				"words":    len(strings.Fields(text)),
+			},
+		})
+		fmt.Fprintf(w, "data: %s\n\n", final)
 		if flusher != nil {
 			flusher.Flush()
 		}
@@ -65,7 +83,10 @@ func main() {
 		text := extractText(body)
 		fmt.Printf("turn  json input=%q\n", text)
 		time.Sleep(*delay)
-		writeJSON(w, map[string]string{"output": "you said: " + text})
+		writeJSON(w, map[string]any{
+			"output":  "you said: " + text,
+			"summary": map[string]any{"headline": headline(text), "words": len(strings.Fields(text))},
+		})
 	})
 
 	fmt.Printf("mockagent listening on %s\n", *addr)
@@ -105,6 +126,17 @@ func extractText(body map[string]any) string {
 		return s
 	}
 	return ""
+}
+
+// headline is a short, bounded stand-in for the structured field a real agent
+// would return. Bounded is the point: a rule reading it writes one line however
+// long the conversation gets, which is the property `from: $text` cannot offer.
+func headline(text string) string {
+	words := strings.Fields(text)
+	if len(words) > 8 {
+		words = append(words[:8:8], "…")
+	}
+	return strings.Join(words, " ")
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

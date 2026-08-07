@@ -33,6 +33,16 @@ type Store interface {
 	// Sessions lists every session the store knows about, oldest first. Used to
 	// rehydrate after a restart.
 	Sessions() ([]string, error)
+
+	// Reset empties the store and reports how many sessions it dropped.
+	//
+	// It exists for the development loop, where a durable log is a liability:
+	// every restart brings back every room you were finished with, and the ones
+	// you care about are buried under them. It is deliberately not reachable
+	// over the API — a log that anything holding a token could erase would not
+	// be worth keeping in the first place.
+	Reset() (int, error)
+
 	Close() error
 }
 
@@ -139,6 +149,19 @@ func (l *memLog) Append(sessionID, kind, actor, turn string, data any) (Event, e
 
 	l.fan.publish(ev)
 	return ev, nil
+}
+
+func (l *memLog) Reset() (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := len(l.order)
+	l.bySess = map[string][]Event{}
+	l.seq = map[string]int64{}
+	l.order = nil
+	// Subscribers are left alone: they are attached to sessions that no longer
+	// exist and will see nothing more, which is the correct outcome. Closing
+	// their channels here would race with readers still draining them.
+	return n, nil
 }
 
 func (l *memLog) Since(sessionID string, since int64) ([]Event, error) {

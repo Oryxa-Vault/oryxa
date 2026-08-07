@@ -162,6 +162,26 @@ func (l *pgLog) Sessions() ([]string, error) {
 	return out, rows.Err()
 }
 
+func (l *pgLog) Reset() (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var n int
+	if err := l.pool.QueryRow(ctx,
+		`SELECT count(*) FROM oryxa_sessions`).Scan(&n); err != nil {
+		return 0, err
+	}
+	// oryxa_events cascades from oryxa_sessions, so one delete empties both and
+	// cannot leave events orphaned from the counter row that numbers them.
+	// TRUNCATE would be faster and would also take a lock that blocks every
+	// reader; this runs at startup, where correctness is the only thing that
+	// matters and the table is small by construction.
+	if _, err := l.pool.Exec(ctx, `DELETE FROM oryxa_sessions`); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (l *pgLog) Close() error {
 	l.pool.Close()
 	return nil

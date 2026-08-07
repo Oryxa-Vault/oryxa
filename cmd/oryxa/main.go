@@ -151,6 +151,7 @@ Serve flags
   -db DSN               postgres; in-memory if unset  (ORYXA_DATABASE_URL)
   -token TOKEN          require this token            (ORYXA_TOKEN)
   -trust-header HEADER  identity from your proxy      (ORYXA_TRUST_HEADER)
+  -reset                erase every session on start  (ORYXA_RESET) — development
 
 Run  oryxa <command> -h  for a command's own flags.
 
@@ -171,6 +172,9 @@ func serve(args []string, openWindow bool) {
 	trustHeader := fs.String("trust-header", os.Getenv("ORYXA_TRUST_HEADER"),
 		"take the acting user from this header, set by your proxy (e.g. X-Forwarded-User); "+
 			"only safe when nothing can reach this port except that proxy")
+	reset := fs.Bool("reset", os.Getenv("ORYXA_RESET") != "",
+		"erase every session before starting (ORYXA_RESET); for development, where "+
+			"a durable log means each restart brings back every room you were done with")
 	_ = fs.Parse(args)
 
 	defaultAgentHost()
@@ -191,6 +195,15 @@ func serve(args []string, openWindow bool) {
 
 	exec := connector.NewExecutor()
 	mgr := session.NewManager(reg, exec, log)
+
+	// Reset before rehydrate, so nothing is restored only to be deleted.
+	var wiped int
+	if *reset {
+		if wiped, err = log.Reset(); err != nil {
+			fmt.Fprintf(os.Stderr, "reset: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	recovered, err := mgr.Rehydrate()
 	if err != nil {
@@ -214,6 +227,12 @@ func serve(args []string, openWindow bool) {
 	fmt.Printf("  ├─ viewer      %s\n", url)
 	fmt.Printf("  ├─ api         %s/v1\n", url)
 	fmt.Printf("  ├─ store       %s\n", storeKind)
+	if *reset {
+		// Said plainly and every time. Erasing the log is the one startup option
+		// that destroys something, and a flag left set in an .env is exactly how
+		// it gets used somewhere it should not be.
+		fmt.Printf("  ├─ reset       ON — erased %d session(s); this runs on every start\n", wiped)
+	}
 	if *token == "" {
 		fmt.Printf("  ├─ auth        none — anyone who can reach %s has full access\n", *addr)
 	} else {
