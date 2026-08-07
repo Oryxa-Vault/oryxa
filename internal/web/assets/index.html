@@ -119,6 +119,50 @@
   }
   @keyframes blink { 50%{opacity:0} }
 
+  /* The room panel. Shared context is the hardest part of Oryxa to picture,
+     because it is the one thing that is not a message: it sits beside the
+     transcript, several agents write it, and what any one of them was shown is
+     a slice of it taken at a moment. Showing it next to the transcript, moving
+     while the transcript moves, is most of the explanation. */
+  .ctxpanel {
+    width:320px; flex:0 1 320px; min-width:200px;
+    border-left:1px solid var(--line); background:var(--panel);
+    overflow-y:auto; overflow-x:hidden; padding:14px;
+  }
+  .ctxentry {
+    border:1px solid var(--line); border-radius:6px;
+    padding:8px 10px; margin-bottom:9px; background:var(--bg);
+  }
+  .ctxentry.pinned { border-color:var(--accent); }
+  .ctxhead { display:flex; align-items:baseline; gap:6px; margin-bottom:5px; }
+  .ctxkey { font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; }
+  .badge {
+    font-size:10px; padding:1px 5px; border-radius:3px;
+    background:var(--panel2); color:var(--dim); border:1px solid var(--line);
+  }
+  .badge.pin { color:var(--accent); border-color:var(--accent); }
+  .ctxitem {
+    font-size:12px; padding:3px 0; border-top:1px dashed var(--line);
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .ctxitem:first-of-type { border-top:none; }
+  .ctxitem .by { color:var(--faint); font-size:10px; }
+  .ctxval { font-size:12px; white-space:pre-wrap; word-break:break-word; }
+  .ctxnew { animation:flash 1.4s ease-out; }
+  @keyframes flash { from { background:var(--panel2); } to { background:var(--bg); } }
+
+  /* Per-turn digest. Hidden until asked for: it answers "why did the agent not
+     see that", which is a question you only have sometimes. */
+  .dbg {
+    display:none; font-size:11px; color:var(--faint);
+    margin:-8px 0 10px; padding-left:10px;
+    border-left:2px solid var(--line);
+  }
+  .showdbg .dbg { display:block; }
+  .dbg b { color:var(--dim); font-weight:600; }
+  .dbg .warn { color:var(--warn); }
+  .dbg .none { color:var(--faint); font-style:italic; }
+
   .composer {
     border-top:1px solid var(--line); padding:12px 16px;
     display:flex; gap:10px; align-items:center; background:var(--panel);
@@ -198,6 +242,7 @@
       <span class="drop"><span class="k">in the room</span> <span class="v" id="ragent"></span></span>
       <span class="spacer"></span>
       <button class="mini" id="rawbtn" title="show every chunk exactly as the agent sent it">raw</button>
+      <button class="mini" id="dbgbtn" title="show what each agent was handed from shared context">debug</button>
       <span class="v" id="rstate"></span>
       <span class="queue" id="rqueue"></span>
     </div>
@@ -215,6 +260,15 @@
       <button id="send">send</button>
     </div>
   </section>
+
+  <aside class="ctxpanel" id="ctxpanel" style="display:none">
+    <h2>The room knows</h2>
+    <div id="ctxbody"></div>
+    <div class="hint" id="ctxhint">
+      shared state, beside the transcript. agents write it through their
+      connector's <code>context:</code> rules; anyone can write it over the API.
+    </div>
+  </aside>
 </main>
 
 <script>
@@ -363,6 +417,9 @@ async function openSession(id) {
   $('#composer').style.display = 'flex';
   $('#transcript').innerHTML = '';
   $('#rsid').textContent = id;
+  $('#ctxpanel').style.display = 'block';
+  ctxSig = '';
+  loadContext(id);
   renderSessions();
 
   const v = await api('/v1/sessions/' + id);
@@ -396,7 +453,8 @@ function onEvent(ev) {
       sys('input withdrawn'); break;
     case 'turn.started':
       $('#rstate').textContent = 'running';
-      startAgent(ev.turn, d.agent || ev.actor); break;
+      startAgent(ev.turn, d.agent || ev.actor);
+      digestLine(d.agent || ev.actor, d.context); break;
     case 'output.part':
       rawLine(d);
       if (d.kind === 'text') appendAgent(ev.turn, d.text);
@@ -411,11 +469,115 @@ function onEvent(ev) {
       sys(`${ev.actor || 'agent'} failed: ` + (d.error||''), true); break;
     case 'turn.cancelled':
       $('#rstate').textContent = 'idle'; endAgent(ev.turn); sys('turn cancelled'); break;
+
+    // A turn that worked and said nothing. Not an error, so it is not shown as
+    // one — but a silent agent is the failure people blame the framework for,
+    // and the server already worked out which half it came from.
+    case 'turn.empty': {
+      // The selectors travel with the event precisely so this line can show
+      // them: reading them against the raw view is the step that settles it.
+      const sel = [];
+      if (d.text) sel.push(`text: ${[].concat(d.text).join(' | ')}`);
+      if (d.when) sel.push(`when: ${d.when}`);
+      sys(`${ev.actor || 'agent'} finished without saying anything — ${d.reason || 'no text'}`
+        + (sel.length ? `  [${sel.join('  ')}]` : ''), false);
+      break;
+    }
+
+    // A rule that could not write. The turn still succeeded, so this is the
+    // only place it surfaces.
+    case 'context.rejected':
+      sys(`${ev.actor || 'agent'} could not write "${d.key}": ${d.error||''}`, true); break;
+
+    case 'context.appended':
+    case 'context.set':
+    case 'context.pinned':
+    case 'context.unpinned':
+      // Re-read rather than folding here: the server already owns append/set/pin
+      // semantics and the render bound, and a second implementation in the
+      // viewer would be a second thing to keep correct.
+      loadContext(selSession); break;
+
     case 'session.closed':
       $('#rstate').textContent = 'closed'; sys('session closed'); break;
   }
   scroll();
 }
+
+// ---- shared context ----
+
+let ctxSig = '';
+
+async function loadContext(id) {
+  if (!id || id !== selSession) return;
+  try {
+    const r = await api(`/v1/sessions/${id}/context`);
+    renderContext(r.context || []);
+  } catch { /* the transcript is the primary view; do not break it over this */ }
+}
+
+function renderContext(entries) {
+  const body = $('#ctxbody');
+  $('#ctxhint').style.display = entries.length ? 'none' : 'block';
+  if (!entries.length) { body.innerHTML = ''; ctxSig = ''; return; }
+
+  // Only redraw on a real change, so the flash means "this just happened"
+  // rather than "three seconds elapsed".
+  const sig = JSON.stringify(entries);
+  if (sig === ctxSig) return;
+  const first = ctxSig === '';
+  ctxSig = sig;
+
+  body.innerHTML = '';
+  for (const e of entries) {
+    const el = document.createElement('div');
+    el.className = 'ctxentry' + (e.pinned ? ' pinned' : '') + (first ? '' : ' ctxnew');
+    let inner = `<div class="ctxhead">
+      <span class="ctxkey">${esc(e.key)}</span>
+      <span class="badge">${esc(e.kind)}</span>
+      ${e.pinned ? '<span class="badge pin">pinned</span>' : ''}
+      <span class="badge">v${e.version ?? 0}</span>
+    </div>`;
+    if (e.kind === 'value') {
+      inner += `<div class="ctxval">${esc(e.value)}</div>
+                <div class="ctxitem"><span class="by">by ${esc(e.by||'?')}</span></div>`;
+    } else {
+      for (const it of (e.items || [])) {
+        inner += `<div class="ctxitem">${esc(it.text)}
+                  <div class="by">${esc(it.by||'?')}</div></div>`;
+      }
+    }
+    el.innerHTML = inner;
+    body.appendChild(el);
+  }
+}
+
+// digestLine renders what this agent was actually handed. The two numbers that
+// matter are separate on purpose: the room can be large while an agent that
+// reads none of it is charged nothing, and that is the thing people expect to
+// be untrue until they watch it.
+function digestLine(agent, c) {
+  if (!c) return;
+  const reads = c.reads || [];
+  const parts = [`<b>v${c.version ?? 0}</b>`];
+  parts.push(reads.length
+    ? `reads ${reads.map(esc).join(', ')}`
+    : '<span class="none">reads nothing</span>');
+  parts.push(`<b>${c.chars ?? 0}</b> chars`);
+  if (c.keys && c.keys.length) parts.push(`room holds ${c.keys.map(esc).join(', ')}`);
+  if (c.elided) parts.push(`<span class="warn">${c.elided} items not shown</span>`);
+
+  const el = document.createElement('div');
+  el.className = 'dbg';
+  el.innerHTML = `${esc(agent)} · ` + parts.join(' · ');
+  $('#transcript').appendChild(el);
+}
+
+$('#dbgbtn').onclick = () => {
+  const on = $('#transcript').classList.toggle('showdbg');
+  $('#dbgbtn').style.borderColor = on ? 'var(--accent)' : '';
+  scroll();
+};
 
 function addUser(turnId, who, text, position) {
   const m = document.createElement('div');

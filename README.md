@@ -398,11 +398,17 @@ go test -race ./...
 
 ## Not built yet
 
-Read scoping — one token currently opens every session, and there is no
-participant concept, so this is laptop-safe rather than deployable. Presence
-(who's here, who's typing). Event hash chaining and usage accounting.
+**Read scoping** is the one that blocks real use: one token opens every session
+and there is no participant concept anywhere, which makes this laptop-safe
+rather than deployable.
 
-Design docs are in `design/`; [`PLAN.md`](PLAN.md) is the source of truth.
+Behind it — agents write to shared context when a turn finishes, not during one;
+nothing summarises a room's older findings once the render bound stops showing
+them; no presence (who's here, who's typing); and events carry neither a hash
+chain nor model token usage.
+
+[`PLAN.md`](PLAN.md) is the source of truth and carries the same list with the
+reasoning for each; design docs are in `design/`.
 
 ## Contributing
 

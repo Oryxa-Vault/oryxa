@@ -143,8 +143,10 @@ answer), and one agent failing without taking the room down.
 | **Mid-turn writes** | rules apply when a turn finishes. An agent that wants to publish a finding *while* still working would need a callback — `{{callback_url}}` exists in the template context but nothing populates it yet. |
 | **Presence** | who is here, who is typing |
 | **Context rollup** | the render bound keeps a list's newest 20 items and says how many it dropped. Nothing merges, deduplicates or summarises what falls off, so a long room's early findings simply stop reaching prompts. Summarising would have to be a logged event carrying its own output — a summary cannot be recomputed on replay, so recomputing it would give a different room after every restart. |
+| **Hash chaining** | events are ordered and attributed but not tamper-evident. Chaining each event to its predecessor's hash would make the log verifiable rather than merely durable — worth having before anyone treats it as an audit record. |
+| **Usage accounting** | `turn.started` records what the *room* cost a prompt in characters, which is a different thing from what the *model* charged. No event carries token counts, so cost per turn cannot be derived from the log. |
 
-Read scoping is the one that blocks real use. The other three are additive.
+Read scoping is the one that blocks real use. The other five are additive.
 
 Cancel is no longer unexercised: `TestCancelledTurnWritesNothing` drives it end
 to end. What remains untested is the capability path, where the agent is told to
