@@ -361,7 +361,63 @@ problem for it to solve.
 
 ---
 
-## 8. Docs
+## 8. Building on Oryxa
+
+Three tiers, and it is worth being honest that only two of them are open.
+
+**Tier 1 — add an agent.** One connector, no Go. Five frameworks and a protocol
+cost three backward-compatible additions to core, so this tier is proven rather
+than hoped for.
+
+**Tier 2 — build a product on the API.** Twenty endpoints and an SSE stream with
+`?since=` replay. The viewer is the existence proof: it is an API client that
+happens to ship in the binary, and it can be replaced entirely.
+
+**Tier 3 — extend the runtime.** Closed. Every package is `internal/`, which in
+Go is enforced rather than advisory, so nothing here can be imported. That is
+currently the right call — `events.Store` gained a method this week, which would
+have been a breaking change to a published interface — but it should be a stated
+decision rather than something people discover. `events.Store` is the first
+thing worth exporting, when someone names a second implementation.
+
+### The UI-builder path
+
+A platform whose users build agents in a UI, not a text editor. It matters
+because it is a different consumer from everything else here, and most of what
+it needs already exists.
+
+**YAML is not the interface.** A connector is a `Spec`; YAML is how a human
+writes one on disk, JSON is what `POST /v1/agents` takes, and a form is a third
+rendering of the same structure. A UI builder never sees YAML, and registration
+needs no restart and no filesystem access.
+
+`POST /v1/agents/{name}/check` runs a real turn and returns structured
+diagnostics already written for humans — that is a Test Connection button, and
+its warnings are the copy such a button should show.
+
+Two things are still missing before that path is real:
+
+| | |
+|---|---|
+| **Spec schema** | a UI has to hand-code its form and cannot validate before submitting, so users learn a connector is malformed from a 400 rather than from the field. `Validate()` already has the messages; they are just unreachable until you post. The same artifact the API contract needs. |
+| **Secrets** | `GET /v1/agents` returns a spec verbatim, headers included. A connector written by hand keeps its credential out of the file with `{{env.X}}`; a UI-registered one cannot set server-side environment, so the key goes in literally and is then readable by anyone who can list agents. Needed: `{{secret.name}}`, resolved at call time, write-only over the API, never returned. Composes with read scoping rather than fighting it. |
+
+And one that is now fixed: **registrations are durable.** They were held in memory
+only, so a restart lost every API-registered agent while sessions replayed
+intact — leaving rooms that failed every turn with *agent no longer registered*,
+beside a transcript that had come back fine. A registration is now an event on a
+reserved system stream, folded at startup after `LoadDir`, which also buys
+attribution and an edit history for each connector. The API wins a name collision
+with a file, and the startup banner says when it did.
+
+### Stability
+
+`/v1` is stable. The connector spec is stable and additive — new fields, never
+changed meanings. Go packages are internal until 1.0.
+
+---
+
+## 9. Docs
 
 | | |
 |---|---|

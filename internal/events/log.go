@@ -8,6 +8,7 @@ package events
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 )
@@ -21,6 +22,18 @@ type Event struct {
 	Turn    string          `json:"turn,omitempty"`
 	Data    json.RawMessage `json:"data,omitempty"`
 }
+
+// SystemStream carries what the server knows that is not a conversation —
+// connector registrations, today.
+//
+// Reusing the log rather than adding a table is the point: registrations then
+// get durability, ordering, attribution and replay from the same mechanism
+// sessions already use, and a connector's edit history comes free.
+const SystemStream = "_system"
+
+// Reserved reports whether a stream id is bookkeeping rather than a room.
+// Session ids are minted as "s_"+hex, so the underscore prefix cannot collide.
+func Reserved(id string) bool { return strings.HasPrefix(id, "_") }
 
 // Store is the log. Append returns an error because a durable implementation
 // can fail, and an append-only log that silently drops writes is worse than one

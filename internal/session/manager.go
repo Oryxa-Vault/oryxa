@@ -670,6 +670,11 @@ func (m *Manager) Rehydrate() (int, error) {
 	}
 	n := 0
 	for _, id := range ids {
+		// The log carries more than conversations. A system stream rebuilt as a
+		// room would appear in the sidebar as an empty session nobody opened.
+		if events.Reserved(id) {
+			continue
+		}
 		evs, err := m.log.Since(id, 0)
 		if err != nil {
 			return n, fmt.Errorf("read %s: %w", id, err)

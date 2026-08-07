@@ -342,6 +342,13 @@ GET    /v1/sessions/{id}/context         shared state
 POST   /v1/sessions/{id}/context/{key}   {append} or {value} (If-Match: version)
 POST   /v1/sessions/{id}/context/{key}/pin
 
+`POST /v1/agents` takes the same connector as JSON, so an agent can be added at
+runtime with no restart and no filesystem access — which is how a platform whose
+users build agents in a UI would onboard one. Registrations are durable: they go
+to the event log and are restored on start, attributed to whoever made them.
+`POST /v1/agents/{name}/check` runs a real turn and returns structured
+diagnostics, which is the Test Connection button already written.
+
 GET    /v1/sessions/{id}/stream?since=   SSE, resumable from any point
 GET    /v1/sessions/{id}/events?since=   raw log
 ```
@@ -418,6 +425,13 @@ Go needed. [CONTRIBUTING.md](CONTRIBUTING.md) has the three-step version.
 
 If you tried Oryxa and got stuck, an issue saying where you got lost is worth
 real work to us: it tells us exactly where the docs are wrong.
+
+## Stability
+
+`/v1` is stable. The connector spec is stable and additive — new fields, never
+changed meanings — so a connector written today keeps working. Go packages are
+`internal/` until 1.0: the interfaces are young and still moving, and exporting
+one is a promise that cannot be withdrawn.
 
 ## Licence
 

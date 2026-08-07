@@ -109,6 +109,8 @@ func (s *Server) putAgent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err)
 		return
 	}
+	who, _ := s.identify(r, "")
+	s.recordAgent(who.Author, spec)
 	writeJSON(w, 201, spec)
 }
 
@@ -126,10 +128,13 @@ func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
-	if !s.reg.Delete(r.PathValue("name")) {
+	name := r.PathValue("name")
+	if !s.reg.Delete(name) {
 		writeErr(w, 404, fmt.Errorf("agent not found"))
 		return
 	}
+	who, _ := s.identify(r, "")
+	s.recordAgentRemoved(who.Author, name)
 	w.WriteHeader(204)
 }
 

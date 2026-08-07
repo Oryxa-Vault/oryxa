@@ -61,10 +61,17 @@ turn:
 No `open`? `{{handle}}` falls back to the Oryxa session id, which you can pass
 as your own conversation key.
 
+**Several connectors on one runtime need `{{agent}}`.** Every lane in a room
+shares the session id, so `{{handle}}` alone gives four differently-briefed
+connectors one remote conversation — the agent then sees four conflicting role
+instructions in a single thread and answers as all of them. Use
+`{{conversation}}-{{agent}}` as the thread key instead.
+
 ## Variables
 
 `{{input}}` · `{{turn}}` (unique per turn) · `{{conversation}}` (session id) ·
-`{{handle}}` · `{{vars.x}}` or `{{x}}` · `{{env.X}}` · `{{context}}` ·
+`{{handle}}` · `{{agent}}` (this connector's name) · `{{vars.x}}` or `{{x}}` ·
+`{{env.X}}` · `{{context}}` ·
 `{{context.pinned}}` · `{{context.<key>}}`
 
 Unknown names are left in place, so a typo appears in the request rather than

@@ -151,7 +151,7 @@ Serve flags
   -db DSN               postgres; in-memory if unset  (ORYXA_DATABASE_URL)
   -token TOKEN          require this token            (ORYXA_TOKEN)
   -trust-header HEADER  identity from your proxy      (ORYXA_TRUST_HEADER)
-  -reset                erase every session on start  (ORYXA_RESET) — development
+  -reset                erase the log on start        (ORYXA_RESET) — development
 
 Run  oryxa <command> -h  for a command's own flags.
 
@@ -173,8 +173,9 @@ func serve(args []string, openWindow bool) {
 		"take the acting user from this header, set by your proxy (e.g. X-Forwarded-User); "+
 			"only safe when nothing can reach this port except that proxy")
 	reset := fs.Bool("reset", os.Getenv("ORYXA_RESET") != "",
-		"erase every session before starting (ORYXA_RESET); for development, where "+
-			"a durable log means each restart brings back every room you were done with")
+		"erase the log before starting (ORYXA_RESET); for development, where a "+
+			"durable log means each restart brings back every room you were done "+
+			"with. Also drops agents registered over the API, which live in the same log")
 	_ = fs.Parse(args)
 
 	defaultAgentHost()
@@ -203,6 +204,15 @@ func serve(args []string, openWindow bool) {
 			fmt.Fprintf(os.Stderr, "reset: %v\n", err)
 			os.Exit(1)
 		}
+	}
+
+	// After LoadDir: a registration made over the API is the more recent
+	// deliberate act, and the only one available to someone who cannot reach
+	// the filesystem.
+	stored, shadowed, err := api.RestoreAgents(log, reg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "restore agents: %v\n", err)
+		os.Exit(1)
 	}
 
 	recovered, err := mgr.Rehydrate()
@@ -243,7 +253,20 @@ func serve(args []string, openWindow bool) {
 	} else {
 		fmt.Printf("  ├─ identity    from %s (bind privately; this header is spoofable)\n", *trustHeader)
 	}
-	fmt.Printf("  └─ connectors  %d loaded from %s\n\n", n, *dir)
+	if stored > 0 {
+		fmt.Printf("  ├─ connectors  %d loaded from %s, %d restored from the log\n", n, *dir, stored)
+	} else {
+		fmt.Printf("  └─ connectors  %d loaded from %s\n", n, *dir)
+	}
+	for _, name := range shadowed {
+		// A file sitting there looking authoritative while something else wins
+		// is exactly the kind of thing that costs an afternoon.
+		fmt.Printf("  ├─ note        %q from the log overrides the file of the same name\n", name)
+	}
+	if stored > 0 {
+		fmt.Printf("  └─ registered agents survive a restart\n")
+	}
+	fmt.Println()
 	if recovered > 0 {
 		fmt.Printf("     recovered %d session(s) from the log\n\n", recovered)
 	}
