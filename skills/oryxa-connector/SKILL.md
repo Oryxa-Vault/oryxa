@@ -75,7 +75,11 @@ instructions in a single thread and answers as all of them. Use
 `{{context.pinned}}` · `{{context.<key>}}`
 
 Unknown names are left in place, so a typo appears in the request rather than
-silently becoming empty. Context keys are the exception — an unwritten key
+silently becoming empty.
+
+`{{input}}` is one message rendered as itself, or — when several were said while
+your agent was busy — an attributed exchange (`alice: …` / `bob: …`) coalesced
+into one turn. A connector needs no change for this; a lone message is unchanged. Context keys are the exception — an unwritten key
 renders empty, because a room that just started is not a typo.
 
 ## Shared context

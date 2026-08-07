@@ -57,9 +57,18 @@ Full reference: [docs/integrating.md](docs/integrating.md).
 gates and declared capabilities. `oryxa check` probes one with a real turn and
 warns about the ways a connector can pass while being quietly wrong.
 
-**Sessions.** Many people, one or more agents. Input fans out to one turn per
-agent, each landing in that agent's own **lane** — its own queue, its own
-goroutine, its own conversation handle.
+**Sessions.** Many people, one or more agents. Each agent has its own **lane** —
+a cursor into what the room has said, its own goroutine, its own conversation
+handle.
+
+Listening and speaking are different acts, and a lane keeps a cursor rather than
+a queue because of it. Submitting appends one event; it does not schedule work
+for anybody. When a lane is free it takes everything said since its cursor as one
+turn, so messages that arrive while an agent is busy cost a round rather than a
+turn each. Measured live: eight messages typed at human speed against a
+400ms agent ran as two turns, one covering seven. A queue would have run eight,
+serially, falling further behind with every message — which is what happens in
+any room where people type faster than models answer.
 
 The serialization requirement is per agent, not per session: an agent's
 conversation is sequential, but two agents have two conversations and no reason
@@ -219,9 +228,9 @@ any conversation the listener is behind the speaker; that is not a defect, it is
 what listening is. Nobody in a group chat is "behind" — they are reading. The
 defect is that Oryxa gives no way to read.
 
-### 7.1 Cursors instead of fan-out
+### 7.1 Cursors instead of fan-out — **built**
 
-Reception becomes free and universal; production becomes a decision.
+Reception is free and universal; production is a decision.
 
 Each participant keeps a **cursor** — where they last spoke from — instead of a
 queue. `Submit` appends one event rather than building N turns. A participant
@@ -236,8 +245,13 @@ does speak, its turn covers everything since its cursor.
 | cost | messages × agents | wake decisions |
 
 A backlog cannot accumulate because there is no per-agent work queue to hold one.
-This also removes the need for a separate transcript binding: what a turn is
-built *from* is the log between the cursor and now.
+This also removed the need for a separate transcript binding: what a turn is
+built *from* is everything since the cursor, rendered with authors when there is
+more than one message in it.
+
+What remains of §7 is the wake decision — every lane still reads everything.
+Coalescing is what makes that survivable; the ladder in §7.3 is what would make
+it cheap.
 
 ### 7.2 Participants
 

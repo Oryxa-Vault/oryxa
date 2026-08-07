@@ -5,20 +5,31 @@ import (
 	"sync"
 )
 
-// A lane is one agent's place in a room: its own queue, its own turn loop, its
-// own conversation with its own framework.
+// A lane is one agent's place in a room: a cursor into what the room has said,
+// its own turn loop, and its own conversation with its own framework.
 //
 // The serialization requirement is per agent, not per session. An agent's
 // conversation is sequential, so its turns must not overlap — but two agents
 // have two conversations and no reason to wait on each other. One goroutine per
-// lane gives exactly that: strict order within an agent, full parallelism
-// across them. A five-agent room answers in the time of its slowest agent
-// rather than the sum of all five.
+// lane gives exactly that: strict order within an agent, full parallelism across
+// them. A five-agent room answers in the time of its slowest agent rather than
+// the sum of all five.
+//
+// A cursor rather than a queue, because listening and speaking are different
+// acts. A queue holds work an agent still owes; a cursor holds only a position.
+// When someone types faster than a model answers — which is always, in a room
+// with people in it — a queue grows without bound and the agent falls further
+// behind with every message. A cursor cannot: whatever arrived while the agent
+// was busy is one turn's worth of reading when it next speaks, however much of
+// it there is. Being behind the speaker is what listening is, and it stops being
+// a backlog the moment it stops being a queue.
 type lane struct {
 	agent string
 
-	mu      sync.Mutex
-	queue   []*Turn
+	mu sync.Mutex
+	// cursor is how far into the room's inbox this agent has read. Everything
+	// before it has been taken; everything after it is what its next turn covers.
+	cursor  int
 	current *Turn
 	handle  string
 	opened  bool
@@ -45,26 +56,54 @@ func (l *lane) nudge() {
 	}
 }
 
-func (l *lane) enqueue(t *Turn) int {
+// take builds this lane's next turn from everything said since its cursor, and
+// returns nil when there is nothing new — the loop's signal to go back to sleep.
+//
+// Coalescing is the whole point. Six people typing during one model call become
+// one turn, not six, so the cost of a busy room is its number of rounds rather
+// than its number of messages, and the lane is at most one turn behind however
+// fast the room moves.
+func (l *lane) take(inbox []Input) *Turn {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.queue = append(l.queue, t)
-	return len(l.queue)
-}
-
-// take pops the next turn and marks it running. Returns nil when the lane is
-// empty, which is the loop's signal to go back to sleep.
-func (l *lane) take() *Turn {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if len(l.queue) == 0 {
+	if l.cursor >= len(inbox) {
 		return nil
 	}
-	t := l.queue[0]
-	l.queue = l.queue[1:]
+
+	fresh := inbox[l.cursor:]
+	l.cursor = len(inbox) // advance past withdrawn entries too; they are not owed
+
+	var taken []Input
+	for _, in := range fresh {
+		if !in.Withdrawn {
+			taken = append(taken, in)
+		}
+	}
+	if len(taken) == 0 {
+		return nil
+	}
+
+	t := newTurn(l.agent, taken)
 	t.State = TurnRunning
 	l.current = t
 	return t
+}
+
+// pending reports how much this lane has not read yet, which is what a client
+// showing "3 waiting" is actually describing.
+func (l *lane) pending(inbox []Input) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cursor >= len(inbox) {
+		return 0
+	}
+	n := 0
+	for _, in := range inbox[l.cursor:] {
+		if !in.Withdrawn {
+			n++
+		}
+	}
+	return n
 }
 
 func (l *lane) done(t *Turn, history *[]*Turn, hmu *sync.Mutex) {
@@ -77,35 +116,32 @@ func (l *lane) done(t *Turn, history *[]*Turn, hmu *sync.Mutex) {
 	hmu.Unlock()
 }
 
-func (l *lane) withdraw(turnID string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for i, t := range l.queue {
-		if t.ID == turnID {
-			l.queue = append(l.queue[:i], l.queue[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
 func (l *lane) running() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.current != nil
 }
 
-func (l *lane) snapshot() (queue []Turn, current *Turn) {
+func (l *lane) snapshot() *Turn {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for _, t := range l.queue {
-		queue = append(queue, *t)
+	if l.current == nil {
+		return nil
 	}
-	if l.current != nil {
-		c := *l.current
-		current = &c
+	c := *l.current
+	c.Inputs = append([]Input(nil), l.current.Inputs...)
+	return &c
+}
+
+// seek moves the cursor without running anything. Restart recovery uses it: a
+// turn that was already taken must not be taken again just because the process
+// died before it finished.
+func (l *lane) seek(to int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if to > l.cursor {
+		l.cursor = to
 	}
-	return queue, current
 }
 
 func (l *lane) stop() {

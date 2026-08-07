@@ -53,7 +53,13 @@ func do(t *testing.T, method, url string, body any) (int, map[string]any) {
 }
 
 // waitTurn polls the session until the turn leaves the queue/running states.
-func waitTurn(t *testing.T, base, sessID, turnID string) map[string]any {
+// waitTurn waits for the turn that answered a given input.
+//
+// Not "the turn whose id this is": a turn is no longer created per input. A
+// busy room coalesces, so one turn can answer several messages at once — and
+// what a caller means by this is "has mine been dealt with", which the turn's
+// own inputs answer directly.
+func waitTurn(t *testing.T, base, sessID, inputID string) map[string]any {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -61,13 +67,16 @@ func waitTurn(t *testing.T, base, sessID, turnID string) map[string]any {
 		hist, _ := view["history"].([]any)
 		for _, h := range hist {
 			m := h.(map[string]any)
-			if m["id"] == turnID {
-				return m
+			ins, _ := m["inputs"].([]any)
+			for _, raw := range ins {
+				if in, ok := raw.(map[string]any); ok && in["id"] == inputID {
+					return m
+				}
 			}
 		}
 		time.Sleep(15 * time.Millisecond)
 	}
-	t.Fatalf("turn %s did not finish", turnID)
+	t.Fatalf("input %s was never answered", inputID)
 	return nil
 }
 
@@ -234,8 +243,12 @@ func TestConcurrentInputIsSerializedInOrder(t *testing.T) {
 	if maxConcurrent != 1 {
 		t.Fatalf("max concurrent turns = %d, want 1 — the agent's conversation is serial", maxConcurrent)
 	}
-	if strings.Join(order, ",") != "alice,bob,carol" {
-		t.Fatalf("order = %v, want submission order", order)
+	// Coalescing means these may arrive in one turn or three. What must hold is
+	// that the agent saw them in the order they were said.
+	seen := strings.Join(order, "\n")
+	ai, bi, ci := strings.Index(seen, "alice"), strings.Index(seen, "bob"), strings.Index(seen, "carol")
+	if ai < 0 || bi < ai || ci < bi {
+		t.Fatalf("agent saw them out of order:\n%s", seen)
 	}
 }
 
@@ -639,8 +652,12 @@ func TestOneAgentNeverOverlapsItself(t *testing.T) {
 	if maxConcurrent != 1 {
 		t.Fatalf("one agent ran %d turns at once; its conversation is sequential", maxConcurrent)
 	}
-	if strings.Join(order, ",") != "alice,bob,carol" {
-		t.Fatalf("order = %v, want submission order", order)
+	// One turn or three, depending on how much coalesced. What must hold is the
+	// order the agent saw them in.
+	seen := strings.Join(order, "\n")
+	ai, bi, ci := strings.Index(seen, "alice"), strings.Index(seen, "bob"), strings.Index(seen, "carol")
+	if ai < 0 || bi < ai || ci < bi {
+		t.Fatalf("agent saw them out of order:\n%s", seen)
 	}
 }
 

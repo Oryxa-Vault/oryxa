@@ -36,30 +36,6 @@ const (
 	StateClosed  State = "closed"
 )
 
-type TurnState string
-
-const (
-	TurnQueued    TurnState = "queued"
-	TurnRunning   TurnState = "running"
-	TurnDone      TurnState = "done"
-	TurnFailed    TurnState = "failed"
-	TurnCancelled TurnState = "cancelled"
-)
-
-type Turn struct {
-	ID     string    `json:"id"`
-	Agent  string    `json:"agent"`
-	Author string    `json:"author"`
-	Text   string    `json:"text"`
-	State  TurnState `json:"state"`
-	Error  string    `json:"error,omitempty"`
-	Output string    `json:"output,omitempty"`
-
-	// Group ties together the turns produced by one input, so a client can
-	// show one question with several answers instead of repeating it.
-	Group string `json:"group,omitempty"`
-}
-
 // Summary is the value returned by create and list.
 type Summary struct {
 	ID      string            `json:"id"`
@@ -74,9 +50,12 @@ type Summary struct {
 // View is the snapshot returned by GET /sessions/{id}.
 type View struct {
 	Summary
-	Queue   []Turn `json:"queue"`
-	Current *Turn  `json:"current,omitempty"`
-	History []Turn `json:"history"`
+	// Waiting is what has been said that no lane has read yet. It replaces the
+	// old per-agent queue, which no longer exists: an agent that has not caught
+	// up owes no turns, it is simply further back in the room.
+	Waiting []Input `json:"waiting,omitempty"`
+	Current *Turn   `json:"current,omitempty"`
+	History []Turn  `json:"history"`
 }
 
 type session struct {
@@ -94,6 +73,12 @@ type session struct {
 
 	hmu     sync.Mutex
 	history []*Turn
+
+	// Everything said to the room, in order. Append-only, and never compacted:
+	// positions are what lane cursors point at, so removing one would silently
+	// move every lane backwards.
+	imu   sync.Mutex
+	inbox []Input
 
 	ctx *sharedctx.Store
 
@@ -290,11 +275,20 @@ func (m *Manager) View(id string) (View, bool) {
 
 	// Merge the lanes. Several agents can be mid-turn at once, so "current" is
 	// whichever lane answered first; the queue is everything still waiting.
+	inbox := s.inboxSnapshot()
+	furthest := len(inbox)
 	for _, l := range s.allLanes() {
-		q, cur := l.snapshot()
-		v.Queue = append(v.Queue, q...)
-		if cur != nil && v.Current == nil {
+		if cur := l.snapshot(); cur != nil && v.Current == nil {
 			v.Current = cur
+		}
+		// Waiting is what the room's least caught-up lane has not read.
+		if n := l.pending(inbox); n > 0 && len(inbox)-n < furthest {
+			furthest = len(inbox) - n
+		}
+	}
+	for _, in := range inbox[furthest:] {
+		if !in.Withdrawn {
+			v.Waiting = append(v.Waiting, in)
 		}
 	}
 	s.hmu.Lock()
@@ -306,63 +300,75 @@ func (m *Manager) View(id string) (View, bool) {
 // Submit queues input. Anyone in the room may send; the author travels with it.
 // One input becomes one turn per agent — everyone in the room asked everyone in
 // the room — and each lands in that agent's own lane.
-func (m *Manager) Submit(id, author, text string) (Turn, error) {
+func (m *Manager) Submit(id, author, text string) (Input, error) {
 	s, ok := m.get(id)
 	if !ok {
-		return Turn{}, ErrNoSession
+		return Input{}, ErrNoSession
 	}
 	s.mu.Lock()
 	if s.state == StateClosed {
 		s.mu.Unlock()
-		return Turn{}, ErrClosed
+		return Input{}, ErrClosed
 	}
-	agents := append([]string(nil), s.agents...)
 	s.mu.Unlock()
 
-	group := "g_" + randHex(6)
-	var first Turn
-	for i, a := range agents {
-		l := s.lane(a)
-		if l == nil {
-			continue
-		}
-		t := &Turn{
-			ID: "t_" + randHex(6), Agent: a, Author: author,
-			Text: text, State: TurnQueued, Group: group,
-		}
-		// Copy before enqueueing, not after. enqueue publishes the turn to the
-		// lane's goroutine, which marks it running under the lane lock the moment
-		// it picks it up — so an unlocked read afterwards races, and the value
-		// that loses is the one returned to the caller as their submit response.
-		if i == 0 {
-			first = *t
-		}
-		pos := l.enqueue(t)
-		m.emit(s.id, "input.submitted", author, t.ID, map[string]any{
-			"text": text, "position": pos, "agent": a, "group": group,
-		})
+	// One append, not one turn per agent. Who answers and when is a lane's
+	// business; saying something is not scheduling work for anybody.
+	s.imu.Lock()
+	in := Input{
+		ID:     "in_" + randHex(6),
+		Seq:    len(s.inbox),
+		Author: author,
+		Text:   text,
+	}
+	s.inbox = append(s.inbox, in)
+	s.imu.Unlock()
+
+	m.emit(s.id, "input.submitted", author, in.ID, map[string]any{
+		"text": text, "seq": in.Seq, "group": in.ID,
+	})
+	for _, l := range s.allLanes() {
 		l.nudge()
 	}
-	return first, nil
+	return in, nil
 }
 
-// Withdraw removes a queued turn. Only queued turns can be withdrawn — a
-// running turn is the agent's business, and cancel is the tool for that.
-func (m *Manager) Withdraw(id, turnID, actor string) error {
+// inboxSnapshot is what a lane reads against. Copied under the lock because the
+// slice header moves as the room fills, and a lane indexing a stale one would
+// read past its end.
+func (s *session) inboxSnapshot() []Input {
+	s.imu.Lock()
+	defer s.imu.Unlock()
+	return append([]Input(nil), s.inbox...)
+}
+
+// Withdraw un-says something nobody has read yet.
+//
+// It marks rather than removes: inbox positions are what lane cursors point at,
+// so deleting one would move every lane silently backwards. A lane that already
+// read it keeps its answer — withdrawing is not un-saying it to whoever heard.
+func (m *Manager) Withdraw(id, inputID, actor string) error {
 	s, ok := m.get(id)
 	if !ok {
 		return ErrNoSession
 	}
-	for _, l := range s.allLanes() {
-		if l.withdraw(turnID) {
-			m.emit(s.id, "input.withdrawn", actor, turnID, nil)
-			return nil
+	s.imu.Lock()
+	found := false
+	for i := range s.inbox {
+		if s.inbox[i].ID == inputID && !s.inbox[i].Withdrawn {
+			s.inbox[i].Withdrawn = true
+			found = true
+			break
 		}
 	}
-	return ErrNoTurn
+	s.imu.Unlock()
+	if !found {
+		return ErrNoTurn
+	}
+	m.emit(s.id, "input.withdrawn", actor, inputID, nil)
+	return nil
 }
 
-// Cancel stops every turn currently running in the room.
 func (m *Manager) Cancel(id, actor string) error {
 	s, ok := m.get(id)
 	if !ok {
@@ -456,7 +462,7 @@ func (m *Manager) laneLoop(s *session, l *lane) {
 			if closed {
 				break
 			}
-			t := l.take()
+			t := l.take(s.inboxSnapshot())
 			if t == nil {
 				break
 			}
@@ -499,8 +505,12 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 	// recorded what it was shown.
 	view, seen := contextSnapshot(s.ctx, spec.Turn.ContextRefs())
 
+	ids := make([]string, 0, len(t.Inputs))
+	for _, in := range t.Inputs {
+		ids = append(ids, in.ID)
+	}
 	m.emit(s.id, "turn.started", author, t.ID, map[string]any{
-		"text": text, "agent": agent, "context": seen,
+		"text": text, "agent": agent, "context": seen, "inputs": ids,
 	})
 
 	tc := connector.Ctx{
@@ -632,14 +642,6 @@ func finish(l *lane, t *Turn, state TurnState, errMsg, output string) {
 	t.State, t.Error, t.Output = state, errMsg, output
 }
 
-func copyTurns(in []*Turn) []Turn {
-	out := make([]Turn, 0, len(in))
-	for _, t := range in {
-		out = append(out, *t)
-	}
-	return out
-}
-
 func cloneMap(m map[string]string) map[string]string {
 	out := make(map[string]string, len(m))
 	for k, v := range m {
@@ -723,6 +725,7 @@ func rebuild(id string, evs []events.Event) *session {
 			Handle string   `json:"handle"`
 			Text   string   `json:"text"`
 			Group  string   `json:"group"`
+			Inputs []string `json:"inputs"`
 			Error  string   `json:"error"`
 			Kind   string   `json:"kind"`
 			Key    string   `json:"key"`
@@ -752,21 +755,39 @@ func rebuild(id string, evs []events.Event) *session {
 		case "session.closed":
 			s.state = StateClosed
 		case "input.submitted":
+			// An input is a thing said, not work owed. It goes to the inbox;
+			// which lanes read it, and when, is replayed from turn.started.
+			s.inbox = append(s.inbox, Input{
+				ID: ev.Turn, Seq: len(s.inbox), Author: ev.Actor, Text: d.Text,
+			})
+		case "input.withdrawn":
+			for i := range s.inbox {
+				if s.inbox[i].ID == ev.Turn {
+					s.inbox[i].Withdrawn = true
+					break
+				}
+			}
+		case "turn.started":
 			if _, seen := turns[ev.Turn]; seen {
 				continue
 			}
 			t := &Turn{
 				ID: ev.Turn, Agent: d.Agent, Author: ev.Actor,
-				Text: d.Text, State: TurnQueued, Group: d.Group,
+				Text: d.Text, State: TurnRunning, Group: ev.Turn,
+			}
+			for _, id := range d.Inputs {
+				for _, in := range s.inbox {
+					if in.ID == id {
+						t.Inputs = append(t.Inputs, in)
+						break
+					}
+				}
+			}
+			if n := len(t.Inputs); n > 0 {
+				t.Group = t.Inputs[n-1].ID
 			}
 			turns[ev.Turn] = t
 			order = append(order, ev.Turn)
-		case "input.withdrawn":
-			delete(turns, ev.Turn)
-		case "turn.started":
-			if t := turns[ev.Turn]; t != nil {
-				t.State = TurnRunning
-			}
 		case "output.part":
 			// Rebuild the answer from the text parts already recorded, so a
 			// completed turn reads the same after a restart as before it.
@@ -827,11 +848,15 @@ func rebuild(id string, evs []events.Event) *session {
 		if l == nil && len(s.agents) > 0 {
 			l = s.lanes[s.agents[0]]
 		}
-		switch t.State {
-		case TurnQueued:
-			if l != nil {
-				l.queue = append(l.queue, t)
+		// A turn that ran consumed its inputs, so the cursor moves past them
+		// whatever became of the turn. Re-reading them because the process died
+		// would ask the agent the same question twice.
+		if l != nil {
+			for _, in := range t.Inputs {
+				l.seek(in.Seq + 1)
 			}
+		}
+		switch t.State {
 		case TurnRunning:
 			t.State = TurnFailed
 			t.Error = "interrupted by restart; outcome unknown"

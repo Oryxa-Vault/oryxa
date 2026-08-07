@@ -283,7 +283,6 @@ const api = (p, opt) => fetch(p, opt).then(async r => {
 let agents = [], sessions = [], selAgents = new Set(), selSession = null;
 let es = null, lastSeq = 0, roomAgents = [];
 const turns = new Map();   // turn id -> {author, text, out, el, done}
-const seenGroups = new Set();  // one rendered question per fan-out group
 
 // Your name is per-tab and sticky, so two windows are two people.
 $('#who').value = localStorage.getItem('oryxa.who') ||
@@ -411,7 +410,7 @@ $('#newbtn').onclick = async () => {
 };
 
 async function openSession(id) {
-  selSession = id; lastSeq = 0; turns.clear(); seenGroups.clear();
+  selSession = id; lastSeq = 0; turns.clear();
   $('#empty').style.display = 'none';
   $('#roomhead').style.display = 'flex';
   $('#composer').style.display = 'flex';
@@ -445,15 +444,14 @@ function onEvent(ev) {
     case 'session.opened':
       break;   // per-agent handle; the header lists who is in the room instead
     case 'input.submitted':
-      // One input creates a turn per agent; render the question once.
-      if (d.group && seenGroups.has(d.group)) { turns.set(ev.turn, {author: ev.actor}); break; }
-      if (d.group) seenGroups.add(d.group);
-      addUser(ev.turn, ev.actor, d.text, d.position); break;
+      // One message is one event now — submitting no longer creates a turn per
+      // agent, so there is nothing to de-duplicate.
+      addUser(ev.turn, ev.actor, d.text); break;
     case 'input.withdrawn':
       sys('input withdrawn'); break;
     case 'turn.started':
       $('#rstate').textContent = 'running';
-      startAgent(ev.turn, d.agent || ev.actor);
+      startAgent(ev.turn, d.agent || ev.actor, (d.inputs || []).length);
       digestLine(d.agent || ev.actor, d.context); break;
     case 'output.part':
       rawLine(d);
@@ -579,21 +577,24 @@ $('#dbgbtn').onclick = () => {
   scroll();
 };
 
-function addUser(turnId, who, text, position) {
+function addUser(turnId, who, text) {
   const m = document.createElement('div');
   m.className = 'msg user';
   m.innerHTML = `<div class="who">${esc(who||'someone')}</div>
                  <div class="bubble">${esc(text||'')}</div>`;
   $('#transcript').appendChild(m);
   turns.set(turnId, { author: who, el: null, out: '' });
-  if (position > 1) $('#rqueue').textContent = `${position-1} waiting`;
 }
 
-function startAgent(turnId, agent) {
+function startAgent(turnId, agent, answering) {
   const t = turns.get(turnId) || {};
   const m = document.createElement('div');
   m.className = 'msg agent';
-  m.innerHTML = `<div class="who">${esc(agent || 'agent')}</div>
+  // Worth showing: an agent answering four messages at once is the room being
+  // busier than it is slow, and it looks like a dropped reply otherwise.
+  const many = answering > 1
+    ? ` <span style="color:var(--faint)">answering ${answering} messages</span>` : '';
+  m.innerHTML = `<div class="who">${esc(agent || 'agent')}${many}</div>
                  <div class="bubble cursor"></div>`;
   $('#transcript').appendChild(m);
   t.el = m.querySelector('.bubble'); t.out = '';

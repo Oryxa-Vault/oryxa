@@ -218,12 +218,20 @@ func (s *Server) submitInput(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, fmt.Errorf("missing %s; this request did not come through the trusted proxy", s.trustHeader))
 		return
 	}
-	t, err := s.mgr.Submit(r.PathValue("id"), who.Author, req.Text)
+	in, err := s.mgr.Submit(r.PathValue("id"), who.Author, req.Text)
 	if err != nil {
 		writeErr(w, statusFor(err), err)
 		return
 	}
-	writeJSON(w, 202, t)
+	// Submitting no longer creates turns — who answers, and when, is each lane's
+	// business. The response is shaped like the old one anyway: `state` and
+	// `group` are what clients branch on, and one input is still one group. The
+	// one field that could not survive is `agent`, which named only the first
+	// agent in the room and meant nothing once a turn stopped being per-input.
+	writeJSON(w, 202, map[string]any{
+		"id": in.ID, "author": in.Author, "text": in.Text,
+		"seq": in.Seq, "state": "queued", "group": in.ID,
+	})
 }
 
 func (s *Server) withdrawInput(w http.ResponseWriter, r *http.Request) {

@@ -705,10 +705,9 @@ func TestReplayedContextReachesTheNextPrompt(t *testing.T) {
 	}
 }
 
-// The turn Submit returns is the body of the submit response. It must be copied
-// while Submit still owns the struct exclusively: enqueue publishes it to the
-// lane goroutine, which marks it running immediately, and a read after that
-// point builds an API response out of a half-written value.
+// Submit is called concurrently with lanes reading the inbox it appends to.
+// The value it returns is the submit response, so it must be complete and its
+// own — the inbox slice header moves as the room fills.
 //
 // Only fails under -race, which is why it hammers rather than asserts.
 func TestSubmitReturnsAStableTurn(t *testing.T) {
@@ -722,15 +721,21 @@ func TestSubmitReturnsAStableTurn(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Whatever the lane does next, the caller was handed a queued turn.
-		if got.State != TurnQueued {
-			t.Fatalf("submit %d returned state %q, want queued", i, got.State)
-		}
-		if got.ID == "" || got.Group == "" {
-			t.Fatalf("submit %d returned an incomplete turn: %+v", i, got)
+		// Whatever the lanes do next, the caller was handed a complete input.
+		if got.ID == "" || got.Author != "alice" || got.Seq != i {
+			t.Fatalf("submit %d returned an incomplete input: %+v", i, got)
 		}
 	}
-	waitTurns(t, m, id, n)
+	// Not n turns: rapid input coalesces, which is the point. What must hold is
+	// that every message reaches the agent.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Count(strings.Join(a.prompts(), "\n"), "go") >= n {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("only %d of %d messages reached the agent", strings.Count(strings.Join(a.prompts(), "\n"), "go"), n)
 }
 
 func equal(a, b []string) bool {

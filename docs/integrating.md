@@ -174,7 +174,7 @@ Anywhere in `path`, `body`, or `headers`:
 
 | | |
 |---|---|
-| `{{input}}` | the turn's text |
+| `{{input}}` | what was said since this agent last spoke |
 | `{{conversation}}` | the Oryxa session id |
 | `{{handle}}` | captured by `open`, else the session id |
 | `{{turn}}` | unique per turn — for protocols needing a fresh run id |
@@ -187,6 +187,20 @@ Anywhere in `path`, `body`, or `headers`:
 
 An unknown name is **left in place** rather than becoming an empty string, so a
 typo shows up in the request instead of silently vanishing.
+
+`{{input}}` is usually one message and renders as exactly that, with no name
+attached. When several arrive while your agent is busy they coalesce into one
+turn and render as an attributed exchange:
+
+```
+alice: checkout is 503ing
+bob: since when?
+alice: 14:02, right after the deploy
+```
+
+Names appear only in that case, because that is the only case that needs them —
+"ship it" and "don't ship it" are the same string without them. Nothing changes
+for a connector written before this: a lone message looks exactly as it did.
 
 Context keys are the one exception: `{{context.plan}}` for a key nobody has
 written yet renders empty. A missing var is a broken config; a missing context
