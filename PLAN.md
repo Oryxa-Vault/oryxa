@@ -86,6 +86,14 @@ rule works everywhere and cannot be talked out of. Context is snapshotted at tur
 start, so parallel lanes never rewrite each other's questions, and a failed turn
 writes nothing.
 
+**Rollup.** What falls off the render bound is summarised rather than merely
+counted, by a connector named with `-summariser`. The constraint that shapes it:
+a summary is a model's output, so recomputing it on replay would give a different
+room after every restart. It is written once, as an event carrying its own text,
+and always built from the original items rather than the previous summary —
+summarising a summary loses a little each pass. It runs off the turn path, and a
+failure is recorded rather than silently returning the room to forgetting.
+
 Size is bounded where it is rendered, not where it is stored. An append entry
 puts its newest 20 items in a prompt and tells the model when it left older ones
 out; the store and the log keep everything. Trimming the fold would need its own
@@ -144,7 +152,6 @@ answer), and one agent failing without taking the room down.
 | **Presence** | who is here, who is typing. Now load-bearing rather than cosmetic: owner precedence in §7.4 is built on it. |
 | **Participants** | agents have no owners. Read scoping, owner-waking and directed output all wait on this one idea — see §7.2. |
 | **Addressing** | every input wakes every agent; there is no way to speak to one. §7 replaces the fan-out rather than patching it. |
-| **Context rollup** | the render bound keeps a list's newest 20 items and says how many it dropped. Nothing merges, deduplicates or summarises what falls off, so a long room's early findings simply stop reaching prompts. Summarising would have to be a logged event carrying its own output — a summary cannot be recomputed on replay, so recomputing it would give a different room after every restart. |
 | **Hash chaining** | events are ordered and attributed but not tamper-evident. Chaining each event to its predecessor's hash would make the log verifiable rather than merely durable — worth having before anyone treats it as an audit record. |
 | **Usage accounting** | `turn.started` records what the *room* cost a prompt in characters, which is a different thing from what the *model* charged. No event carries token counts, so cost per turn cannot be derived from the log. |
 

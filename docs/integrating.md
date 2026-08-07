@@ -332,7 +332,32 @@ findings:
 ```
 
 This is a rendering bound, not a delete. `GET /v1/sessions/{id}/context` and the
-event log still hold every item; only the prompt is trimmed. Trimming the stored
+event log still hold every item; only the prompt is trimmed.
+
+**And the trimmed part can be summarised rather than just counted.** Start Oryxa
+with `-summariser <connector>` and once more than ten items have fallen off, the
+marker becomes what they said:
+
+```
+findings:
+- (30 earlier items, summarised) Checkout returned 503s from 14:02, traced to a
+  connection pool capped at 10 against 40 workers. A rollback was attempted twice.
+- the error rate is back under 1 percent
+```
+
+The summariser is an ordinary connector — Oryxa gains a slot, not a model
+dependency, and unconfigured the count-only marker stays. Three properties are
+worth knowing because they are what make it safe:
+
+- **Written once, replayed as data.** A summary is a model's output and cannot be
+  recomputed, or the room would read differently after every restart. It is an
+  event carrying its own text.
+- **Built from the original items, never from the previous summary.** Summarising
+  a summary loses a little each pass; a long room would end up describing itself
+  in generalities.
+- **Off the turn path.** It runs after an append, not during a turn, so a room's
+  bookkeeping never delays an answer someone asked for. A failure is recorded as
+  `rollup.failed` and retried when the tail next grows. Trimming the stored
 fold instead would need its own event to survive a restart, and a room whose
 history depended on when the server last came up would not be a history.
 
@@ -354,7 +379,8 @@ the pinned set, so it is charged 31 characters rather than the room's full size.
 
 `chars` is the growth curve — plot it per agent to see the wall before you hit
 it, and to see that a pinned-only reader stays flat while the room grows.
-`elided` warns that a turn answered from a partial room, and follows what was
+`elided` counts only what nothing speaks for — items a rollup covers are
+represented rather than missing. It warns that a turn answered from a partial room, and follows what was
 read: a reader that never saw a trimmed list is not warned about it.
 
 ### Capabilities

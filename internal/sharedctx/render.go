@@ -57,9 +57,16 @@ func RenderEntry(e Entry) string {
 		return e.Value
 	}
 	items, elided := tail(e.Items)
+	covered, uncovered := coverage(e, elided)
+
 	var lines []string
-	if elided > 0 {
-		lines = append(lines, fmt.Sprintf("- (%d earlier items not shown)", elided))
+	// Order matters: the summary stands where the items it replaced would have
+	// been, so the entry still reads oldest-to-newest.
+	if covered > 0 {
+		lines = append(lines, fmt.Sprintf("- (%d earlier items, summarised) %s", covered, e.Rollup.Text))
+	}
+	if uncovered > 0 {
+		lines = append(lines, fmt.Sprintf("- (%d earlier items not shown)", uncovered))
 	}
 	for _, it := range items {
 		lines = append(lines, "- "+it.Text)
@@ -67,17 +74,77 @@ func RenderEntry(e Entry) string {
 	return strings.Join(lines, "\n")
 }
 
-// Elided reports how many items Render leaves out, so a caller can record that
-// the prompt was trimmed rather than discover it from a model's behaviour.
+// coverage splits the trimmed items into those a rollup speaks for and those
+// nothing speaks for.
+func coverage(e Entry, elided int) (covered, uncovered int) {
+	if elided == 0 {
+		return 0, 0
+	}
+	if e.Rollup == nil {
+		return 0, elided
+	}
+	for _, it := range e.Items[:elided] {
+		if it.Seq <= e.Rollup.Through {
+			covered++
+		}
+	}
+	return covered, elided - covered
+}
+
+// Elided reports how many items reach the prompt neither in full nor through a
+// summary — which is the number worth warning about.
+//
+// Items a rollup covers are deliberately not counted. They are represented
+// rather than missing, and reporting them would leave the warning permanently on
+// in any room long enough to need summarising, which is how a warning stops
+// being read.
 func Elided(entries []Entry) int {
 	n := 0
 	for _, e := range entries {
-		if e.Kind != KindValue {
-			_, dropped := tail(e.Items)
-			n += dropped
+		if e.Kind == KindValue {
+			continue
 		}
+		_, dropped := tail(e.Items)
+		_, uncovered := coverage(e, dropped)
+		n += uncovered
 	}
 	return n
+}
+
+// NeedsRollup reports entries whose unsummarised tail has grown past want, so a
+// caller can decide whether to spend a model call. Returning the items rather
+// than the entry is deliberate: a summary is built from the original items every
+// time, never from the previous summary, because summarising a summary loses a
+// little on each pass and a room that ran long enough would end up describing
+// itself in generalities.
+func (s *Store) NeedsRollup(key string, want int) (items []Item, through int64, ok bool) {
+	e, found := s.Get(key)
+	if !found || e.Kind == KindValue {
+		return nil, 0, false
+	}
+	_, dropped := tail(e.Items)
+	_, uncovered := coverage(e, dropped)
+	if uncovered < want || dropped == 0 {
+		return nil, 0, false
+	}
+	stale := e.Items[:dropped]
+	return stale, stale[len(stale)-1].Seq, true
+}
+
+// SetRollup records a summary. It is applied from an event rather than computed
+// here, so replay and the live path put the same text in front of an agent.
+func (s *Store) SetRollup(key, text, by string, covers int, through int64) (Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[key]
+	if !ok {
+		return Entry{}, fmt.Errorf("%w: %q", ErrNotFound, key)
+	}
+	if e.Kind != KindAppend {
+		return Entry{}, fmt.Errorf("%w: %q is a value", ErrWrongKind, key)
+	}
+	e.Rollup = &Rollup{Text: text, Covers: covers, Through: through, By: by}
+	return copyEntry(e), nil
 }
 
 // tail keeps the newest items, because a room's recent state is what a turn is

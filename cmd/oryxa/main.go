@@ -151,6 +151,7 @@ Serve flags
   -db DSN               postgres; in-memory if unset  (ORYXA_DATABASE_URL)
   -token TOKEN          require this token            (ORYXA_TOKEN)
   -trust-header HEADER  identity from your proxy      (ORYXA_TRUST_HEADER)
+  -summariser AGENT     roll long context lists up     (ORYXA_SUMMARISER)
   -reset                erase the log on start        (ORYXA_RESET) — development
 
 Run  oryxa <command> -h  for a command's own flags.
@@ -172,6 +173,9 @@ func serve(args []string, openWindow bool) {
 	trustHeader := fs.String("trust-header", os.Getenv("ORYXA_TRUST_HEADER"),
 		"take the acting user from this header, set by your proxy (e.g. X-Forwarded-User); "+
 			"only safe when nothing can reach this port except that proxy")
+	summariser := fs.String("summariser", os.Getenv("ORYXA_SUMMARISER"),
+		"connector that summarises a shared-context list once it outgrows a prompt "+
+			"(ORYXA_SUMMARISER); unset, a long room keeps a count-only marker")
 	reset := fs.Bool("reset", os.Getenv("ORYXA_RESET") != "",
 		"erase the log before starting (ORYXA_RESET); for development, where a "+
 			"durable log means each restart brings back every room you were done "+
@@ -195,7 +199,7 @@ func serve(args []string, openWindow bool) {
 	defer log.Close()
 
 	exec := connector.NewExecutor()
-	mgr := session.NewManager(reg, exec, log)
+	mgr := session.NewManager(reg, exec, log).WithSummariser(*summariser)
 
 	// Reset before rehydrate, so nothing is restored only to be deleted.
 	var wiped int
@@ -247,6 +251,9 @@ func serve(args []string, openWindow bool) {
 		fmt.Printf("  ├─ auth        none — anyone who can reach %s has full access\n", *addr)
 	} else {
 		fmt.Printf("  ├─ auth        shared token\n")
+	}
+	if *summariser != "" {
+		fmt.Printf("  ├─ summariser  %s — long context lists are rolled up, not just trimmed\n", *summariser)
 	}
 	if *trustHeader == "" {
 		fmt.Printf("  ├─ identity    self-declared — the log records claims, not people\n")

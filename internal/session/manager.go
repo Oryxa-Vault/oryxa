@@ -104,6 +104,9 @@ type session struct {
 	// Per session, so different rooms never block each other.
 	ctxWrite sync.Mutex
 
+	// One summary per key in flight at a time.
+	rollups rollupState
+
 	closed chan struct{}
 }
 
@@ -159,6 +162,10 @@ type Manager struct {
 
 	failMu         sync.Mutex
 	appendFailures int
+
+	// Connector that writes rollups. Empty means a long room keeps its
+	// count-only marker rather than a summary.
+	summariser string
 }
 
 func NewManager(reg *connector.Registry, exec *connector.Executor, log events.Store) *Manager {
@@ -787,6 +794,15 @@ func rebuild(id string, evs []events.Event) *session {
 
 		// Shared context is a fold over the same log, so it comes back with
 		// everything else rather than needing its own persistence.
+		case "context.rolled_up":
+			var d struct {
+				Key, Text string
+				Covers    int
+				Through   int64
+			}
+			if json.Unmarshal(ev.Data, &d) == nil {
+				applyRolledUp(s, d.Key, d.Text, ev.Actor, d.Covers, d.Through)
+			}
 		case "context.appended":
 			_, _ = s.ctx.Append(d.Key, ev.Actor, d.Text, ev.Seq, ev.TS)
 		case "context.set":
@@ -856,7 +872,13 @@ func (m *Manager) AppendContext(id, key, by, text string) (sharedctx.Entry, erro
 		m.logFailure(s.id, "context.appended", err)
 		return sharedctx.Entry{}, err
 	}
-	return s.ctx.Append(key, by, text, ev.Seq, ev.TS)
+	entry, err := s.ctx.Append(key, by, text, ev.Seq, ev.TS)
+	if err == nil {
+		// Off the turn path: a room's bookkeeping must not put the framework's
+		// own latency in front of the answer someone asked for.
+		m.maybeRollup(id, key)
+	}
+	return entry, err
 }
 
 // SetContext writes a value entry under optimistic concurrency. ifMatch is the

@@ -46,10 +46,36 @@ type Entry struct {
 	Pinned bool   `json:"pinned"`
 
 	// Value entries carry Value and Version; append entries carry Items.
-	Value   string `json:"value,omitempty"`
-	Version int64  `json:"version,omitempty"`
+	Value   string  `json:"value,omitempty"`
+	Version int64   `json:"version,omitempty"`
+	By      string  `json:"by,omitempty"`
+	Items   []Item  `json:"items,omitempty"`
+	Rollup  *Rollup `json:"rollup,omitempty"`
+}
+
+// Rollup stands in for the items an append entry no longer shows in a prompt.
+//
+// Without one, a long room forgets quietly: the render bound stops showing the
+// oldest findings and says only how many it dropped, so an agent answers from a
+// partial room while sounding exactly as confident as one answering from a whole
+// one. A rollup keeps what those items meant at a size that fits.
+//
+// It carries its own text rather than being recomputed, and that is the whole
+// design constraint. Everything else in a session is a fold over the log, so
+// replay reproduces it exactly. A summary is a model's output and would come
+// back different every time — recomputing it would mean a room whose history
+// changed on each restart, which is not a history. So summarising happens once,
+// the result is an event, and replay applies it as data.
+type Rollup struct {
+	Text string `json:"text"`
+
+	// Covers is how many items it stands for; Through is the sequence number of
+	// the newest one. Items added later are not represented by it, and the
+	// render says so rather than letting them disappear behind a summary that
+	// never saw them.
+	Covers  int    `json:"covers"`
+	Through int64  `json:"through"`
 	By      string `json:"by,omitempty"`
-	Items   []Item `json:"items,omitempty"`
 }
 
 // Conflict is returned when a value write is based on a version that is no
@@ -94,7 +120,7 @@ func (s *Store) Append(key, by, text string, seq int64, at time.Time) (Entry, er
 	}
 	e.Items = append(e.Items, Item{By: by, At: at.UTC(), Text: text, Seq: seq})
 	e.Version = seq
-	return *e, nil
+	return copyEntry(e), nil
 }
 
 // Set writes a value entry. ifMatch is the version the writer last saw; zero
@@ -121,7 +147,7 @@ func (s *Store) Set(key, by, value string, ifMatch, seq int64, _ time.Time) (Ent
 		}
 	}
 	e.Value, e.Version, e.By = value, seq, by
-	return *e, nil
+	return copyEntry(e), nil
 }
 
 func (s *Store) Pin(key string, pinned bool) (Entry, error) {
@@ -132,7 +158,7 @@ func (s *Store) Pin(key string, pinned bool) (Entry, error) {
 		return Entry{}, fmt.Errorf("%w: %q", ErrNotFound, key)
 	}
 	e.Pinned = pinned
-	return *e, nil
+	return copyEntry(e), nil
 }
 
 // Snapshot returns every entry, sorted by key. Callers get copies: nothing here
@@ -142,9 +168,7 @@ func (s *Store) Snapshot() []Entry {
 	defer s.mu.RUnlock()
 	out := make([]Entry, 0, len(s.entries))
 	for _, e := range s.entries {
-		c := *e
-		c.Items = append([]Item(nil), e.Items...)
-		out = append(out, c)
+		out = append(out, copyEntry(e))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
@@ -157,9 +181,23 @@ func (s *Store) Get(key string) (Entry, bool) {
 	if !ok {
 		return Entry{}, false
 	}
+	return copyEntry(e), true
+}
+
+// copyEntry deep-copies everything a reader could hold while a writer moves on.
+//
+// Rollup is a pointer, so a shallow copy would share it. That is safe only for
+// as long as nobody mutates a Rollup in place — a convention, and the same one
+// that already produced a data race here once when readers were handed *Turn.
+// Copying costs nothing at this size and removes the question.
+func copyEntry(e *Entry) Entry {
 	c := *e
 	c.Items = append([]Item(nil), e.Items...)
-	return c, true
+	if e.Rollup != nil {
+		r := *e.Rollup
+		c.Rollup = &r
+	}
+	return c
 }
 
 // Pinned returns the curated set, which is the part meant to be small enough to

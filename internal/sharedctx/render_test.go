@@ -185,3 +185,126 @@ func TestElidedCountsWhatThePromptLeftOut(t *testing.T) {
 		t.Fatalf("Elided = %d for a short room, want 0", n)
 	}
 }
+
+// ---- rollup ----
+
+func rolled(n, covers int, through int64) Entry {
+	e := manyItems(n)
+	for i := range e.Items {
+		e.Items[i].Seq = int64(i + 1)
+	}
+	e.Rollup = &Rollup{Text: "the api was rate limited and the pool was capped", Covers: covers, Through: through}
+	return e
+}
+
+func TestRollupReplacesTheNotShownMarker(t *testing.T) {
+	// 25 items, 20 shown, 5 trimmed — and the rollup covers all 5.
+	got := RenderEntry(rolled(MaxItemsPerEntry+5, 5, 5))
+	if strings.Contains(got, "not shown") {
+		t.Fatalf("a covered tail still reported items as missing:\n%s", got)
+	}
+	if !strings.Contains(got, "(5 earlier items, summarised) the api was rate limited") {
+		t.Fatalf("summary missing:\n%s", got)
+	}
+}
+
+// The summary stands where the items it replaced were, so the entry still reads
+// oldest to newest.
+func TestRollupComesBeforeTheItemsItPrecedes(t *testing.T) {
+	got := RenderEntry(rolled(MaxItemsPerEntry+5, 5, 5))
+	sum := strings.Index(got, "summarised")
+	first := strings.Index(got, "- finding 6")
+	if sum < 0 || first < 0 || sum > first {
+		t.Fatalf("summary is not first:\n%s", got)
+	}
+}
+
+// Items added after a rollup are not represented by it. Letting them vanish
+// behind a summary that never saw them is the failure worth avoiding.
+func TestItemsPastTheRollupAreStillReportedMissing(t *testing.T) {
+	// 30 items, 10 trimmed, rollup only covers the first 4.
+	got := RenderEntry(rolled(MaxItemsPerEntry+10, 4, 4))
+	if !strings.Contains(got, "(4 earlier items, summarised)") {
+		t.Fatalf("covered items lost their summary:\n%s", got)
+	}
+	if !strings.Contains(got, "(6 earlier items not shown)") {
+		t.Fatalf("uncovered items were not reported:\n%s", got)
+	}
+}
+
+// Elided is the "you are answering from a partial room" warning. Items a rollup
+// speaks for are represented, not missing — counting them would leave the
+// warning permanently on in any room long enough to need one.
+func TestElidedIgnoresWhatARollupCovers(t *testing.T) {
+	if n := Elided([]Entry{rolled(MaxItemsPerEntry+5, 5, 5)}); n != 0 {
+		t.Fatalf("Elided = %d for a fully covered tail, want 0", n)
+	}
+	if n := Elided([]Entry{rolled(MaxItemsPerEntry+10, 4, 4)}); n != 6 {
+		t.Fatalf("Elided = %d, want the 6 nothing speaks for", n)
+	}
+}
+
+func TestNeedsRollupOnlyWhenTheTailIsWorthIt(t *testing.T) {
+	s := store(t)
+	for i := 1; i <= MaxItemsPerEntry+3; i++ {
+		s.Append("findings", "a", fmt.Sprintf("f%d", i), int64(i), time.Now())
+	}
+	if _, _, ok := s.NeedsRollup("findings", 10); ok {
+		t.Fatal("3 trimmed items triggered a rollup at a threshold of 10")
+	}
+	items, through, ok := s.NeedsRollup("findings", 3)
+	if !ok {
+		t.Fatal("3 trimmed items did not meet a threshold of 3")
+	}
+	if len(items) != 3 || through != 3 {
+		t.Fatalf("got %d items through seq %d, want 3 through 3", len(items), through)
+	}
+	if items[0].Text != "f1" {
+		t.Fatalf("rollup was handed %q first; it must summarise from the oldest", items[0].Text)
+	}
+}
+
+// Summarising a summary loses a little each pass. A second rollup is built from
+// the original items, which the store still has.
+func TestSecondRollupStartsFromTheOriginalItems(t *testing.T) {
+	s := store(t)
+	for i := 1; i <= MaxItemsPerEntry+5; i++ {
+		s.Append("findings", "a", fmt.Sprintf("f%d", i), int64(i), time.Now())
+	}
+	if _, err := s.SetRollup("findings", "first summary", "roller", 5, 5); err != nil {
+		t.Fatal(err)
+	}
+	for i := MaxItemsPerEntry + 6; i <= MaxItemsPerEntry+12; i++ {
+		s.Append("findings", "a", fmt.Sprintf("f%d", i), int64(i), time.Now())
+	}
+	items, _, ok := s.NeedsRollup("findings", 1)
+	if !ok {
+		t.Fatal("a grown tail did not ask for a rollup")
+	}
+	if items[0].Text != "f1" {
+		t.Fatalf("re-roll started at %q, not the oldest original item", items[0].Text)
+	}
+}
+
+func TestRollupIsRefusedOnAValueEntry(t *testing.T) {
+	s := store(t)
+	s.Set("plan", "a", "ship", 0, 1, time.Now())
+	if _, err := s.SetRollup("plan", "x", "roller", 1, 1); err == nil {
+		t.Fatal("a value entry accepted a rollup")
+	}
+}
+
+// A reader must never share a Rollup with the store.
+func TestSnapshotDoesNotShareTheRollup(t *testing.T) {
+	s := store(t)
+	s.Append("findings", "a", "one", 1, time.Now())
+	s.SetRollup("findings", "original", "roller", 1, 1)
+
+	got, _ := s.Get("findings")
+	got.Rollup.Text = "mutated by a reader"
+
+	again, _ := s.Get("findings")
+	if again.Rollup.Text != "original" {
+		t.Fatalf("a reader mutated the store: %q", again.Rollup.Text)
+	}
+}

@@ -1,0 +1,48 @@
+# The connector that keeps a long room from forgetting.
+#
+# Point Oryxa at it with `-summariser <name>` (or ORYXA_SUMMARISER). Unset,
+# nothing rolls up and a long list keeps its count-only marker — so this is a
+# slot rather than a dependency, and the framework still runs with no API key.
+#
+# Oryxa hands it the items that have fallen off the end of a prompt, as
+# {{input}}, one per line with who wrote each:
+#
+#   - analyst: the checkout api is returning 503s
+#   - analyst: error rate is 12 percent and climbing
+#   - oncall: it started after the 14:02 deploy
+#
+# It should return prose. Whatever comes back is stored and put in front of every
+# agent that reads that entry, in place of "(30 earlier items not shown)".
+name: summariser
+base: http://{{env.ORYXA_AGENT_HOST}}:8000
+timeout: 2m
+
+turn:
+  method: POST
+  path: /chat
+  body:
+    message: |
+      These are older findings from a shared working session. They no longer fit
+      in the prompt, so this summary will stand in for them from now on.
+
+      Write at most four sentences. Keep specifics — numbers, names, times,
+      decisions and anything still unresolved. Drop restatements and pleasantries.
+      Write plainly, with no preamble and no heading.
+
+      {{input}}
+  response:
+    text: [$.reply]
+
+# Notes on how Oryxa uses this:
+#
+#   when      after an append leaves more than 10 items unsummarised. Never on
+#             the turn path — a room's bookkeeping must not put the framework's
+#             own latency in front of the answer someone asked for.
+#   input     always the original items, never a previous summary. Summarising a
+#             summary loses a little each pass, and a long room would end up
+#             describing itself in generalities.
+#   once      the result is an event. Replay applies the recorded text rather
+#             than calling this again, so a restart cannot change what the room
+#             says it remembers.
+#   failure   recorded as rollup.failed and retried when the tail next grows.
+#             Nothing breaks; the room goes back to the count-only marker.
