@@ -56,6 +56,7 @@ func (e *Executor) Check(ctx context.Context, spec *Spec, probe string) *CheckRe
 		Input:        probe,
 		Turn:         "t_" + randSuffix(),
 		Conversation: conv,
+		Agent:        spec.Name,
 		Vars:         spec.Vars,
 		Captures:     map[string]string{},
 	}

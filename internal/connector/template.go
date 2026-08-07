@@ -23,6 +23,7 @@ type Ctx struct {
 	Turn          string
 	Conversation  string
 	Handle        string
+	Agent         string
 	CallbackURL   string
 	CallbackToken string
 	Vars          map[string]string
@@ -39,6 +40,17 @@ func (c Ctx) lookup(name string) (string, bool) {
 		return c.Input, true
 	case name == "conversation":
 		return c.Conversation, true
+	case name == "agent":
+		// This connector's own name, which is what distinguishes several
+		// connectors that point at the same runtime.
+		//
+		// Without it, roles built on one agent collide: with no open step
+		// {{handle}} falls back to the session id, which every lane in a room
+		// shares, so four differently-briefed connectors all address the same
+		// remote conversation. The agent then sees four conflicting briefs in
+		// one thread and answers as all of them, which reads like a prompting
+		// problem and is not one.
+		return c.Agent, true
 	case name == "turn":
 		// Unique per turn. Protocols that want a fresh run/message id each time
 		// (AG-UI does) have nothing else to use.

@@ -178,6 +178,7 @@ Anywhere in `path`, `body`, or `headers`:
 | `{{conversation}}` | the Oryxa session id |
 | `{{handle}}` | captured by `open`, else the session id |
 | `{{turn}}` | unique per turn — for protocols needing a fresh run id |
+| `{{agent}}` | this connector's own name |
 | `{{vars.x}}` or `{{x}}` | from the connector's own `vars:` block |
 | `{{env.X}}` | the Oryxa server's environment |
 | `{{context}}` | everything the room has agreed, as text |

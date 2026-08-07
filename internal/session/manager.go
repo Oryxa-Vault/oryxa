@@ -501,6 +501,7 @@ func (m *Manager) run(s *session, l *lane, t *Turn) {
 		Turn:         t.ID,
 		Conversation: s.id,
 		Handle:       handle,
+		Agent:        agent,
 		Vars:         spec.Vars,
 		Captures:     captures,
 		Context:      view,

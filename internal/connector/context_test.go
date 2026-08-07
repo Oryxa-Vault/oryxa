@@ -260,3 +260,36 @@ func TestContextRefsWalksWhereRenderWalks(t *testing.T) {
 		t.Fatalf("Render left the nested reference unsubstituted: %q", deep)
 	}
 }
+
+// {{agent}} is what separates several connectors that point at one runtime.
+//
+// This is the "many roles, one agent" shape: four connectors, four briefs, one
+// process behind them. Without a per-connector value in the template they all
+// address the same remote conversation, because with no open step {{handle}}
+// falls back to the session id and every lane in a room shares it.
+func TestAgentNameDistinguishesConnectorsOnOneRuntime(t *testing.T) {
+	const tmpl = "{{conversation}}-{{agent}}"
+	seen := map[string]bool{}
+	for _, name := range []string{"researcher", "analyst", "critic", "writer"} {
+		got := Ctx{Conversation: "s_1", Agent: name}.RenderString(tmpl)
+		if seen[got] {
+			t.Fatalf("%q collided with an earlier role", got)
+		}
+		seen[got] = true
+	}
+	if len(seen) != 4 {
+		t.Fatalf("four roles produced %d distinct threads", len(seen))
+	}
+}
+
+// The failure it prevents, stated directly: same room, no agent name, one thread.
+func TestWithoutTheAgentNameRolesShareAThread(t *testing.T) {
+	a := Ctx{Conversation: "s_1"}.RenderString("{{handle}}")
+	b := Ctx{Conversation: "s_1"}.RenderString("{{handle}}")
+	if a != b {
+		t.Fatalf("premise wrong: %q != %q", a, b)
+	}
+	if a != "s_1" {
+		t.Fatalf("handle fell back to %q, want the session id", a)
+	}
+}
