@@ -71,17 +71,34 @@ func (l *lane) take(inbox []Input) *Turn {
 	}
 
 	fresh := inbox[l.cursor:]
-	l.cursor = len(inbox) // advance past withdrawn entries too; they are not owed
 
+	// Read everything, speak only when wanted. If nothing here is for this agent
+	// the cursor stays put — so when it is finally asked, its turn covers the
+	// whole conversation it sat through rather than starting from the question.
+	// That is the difference between an agent that was present and one that has
+	// just walked in.
 	var taken []Input
+	wanted := false
 	for _, in := range fresh {
-		if !in.Withdrawn {
-			taken = append(taken, in)
+		if in.Withdrawn {
+			continue
+		}
+		taken = append(taken, in)
+		for _, a := range in.Wake {
+			if a == l.agent {
+				wanted = true
+				break
+			}
 		}
 	}
 	if len(taken) == 0 {
+		l.cursor = len(inbox) // nothing but withdrawals; not owed
 		return nil
 	}
+	if !wanted {
+		return nil
+	}
+	l.cursor = len(inbox)
 
 	t := newTurn(l.agent, taken)
 	t.State = TurnRunning

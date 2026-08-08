@@ -25,7 +25,12 @@ type Spec struct {
 	Headers      map[string]string `yaml:"headers" json:"headers,omitempty"`
 	Vars         map[string]string `yaml:"vars" json:"vars,omitempty"`
 	Capabilities []string          `yaml:"capabilities" json:"capabilities,omitempty"`
-	Timeout      string            `yaml:"timeout" json:"timeout,omitempty"`
+
+	// Interests are words that should bring this agent into a conversation it
+	// was not directly asked to join. Matching is whole-word and
+	// case-insensitive; nothing here is a model call.
+	Interests []string `yaml:"interests" json:"interests,omitempty"`
+	Timeout   string   `yaml:"timeout" json:"timeout,omitempty"`
 
 	// Open runs once per Oryxa session, to establish continuity on the agent
 	// side. Optional: agents without a conversation concept omit it.

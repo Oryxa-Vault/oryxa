@@ -202,8 +202,9 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) submitInput(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Text   string `json:"text"`
-		Author string `json:"author"`
+		Text   string   `json:"text"`
+		Author string   `json:"author"`
+		To     []string `json:"to,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, err)
@@ -218,7 +219,7 @@ func (s *Server) submitInput(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, fmt.Errorf("missing %s; this request did not come through the trusted proxy", s.trustHeader))
 		return
 	}
-	in, err := s.mgr.Submit(r.PathValue("id"), who.Author, req.Text)
+	in, err := s.mgr.Submit(r.PathValue("id"), who.Author, req.Text, req.To...)
 	if err != nil {
 		writeErr(w, statusFor(err), err)
 		return
@@ -231,6 +232,7 @@ func (s *Server) submitInput(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, map[string]any{
 		"id": in.ID, "author": in.Author, "text": in.Text,
 		"seq": in.Seq, "state": "queued", "group": in.ID,
+		"wake": in.Wake, "why": in.Why,
 	})
 }
 

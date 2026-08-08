@@ -13,6 +13,15 @@ type Input struct {
 	Author string `json:"author"`
 	Text   string `json:"text"`
 
+	// To is who the sender named explicitly. Empty leaves it to the room's own
+	// rules, which is how most messages arrive.
+	To []string `json:"to,omitempty"`
+
+	// Wake is who this message is for, decided once when it lands and recorded
+	// so a room can show why an agent spoke — or why it did not.
+	Wake []string `json:"wake"`
+	Why  string   `json:"why,omitempty"`
+
 	// Withdrawn inputs stay in the inbox so positions never shift under a
 	// cursor. Lanes skip them; a lane that already read one keeps its answer,
 	// because withdrawing something is not un-saying it to whoever heard it.

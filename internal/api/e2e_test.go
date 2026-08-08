@@ -162,12 +162,12 @@ func TestEndToEndAcrossTwoAgentShapes(t *testing.T) {
 		_, s := do(t, "POST", ory.URL+"/v1/sessions", map[string]string{"agent": "beta"})
 		sid := s["id"].(string)
 		_, tr := do(t, "POST", ory.URL+"/v1/sessions/"+sid+"/input",
-			map[string]string{"text": "hello", "author": "bob"})
+			map[string]string{"text": "what is the plan", "author": "bob"})
 		got := waitTurn(t, ory.URL, sid, tr["id"].(string))
 		if got["state"] != "done" {
 			t.Fatalf("state = %v (%v)", got["state"], got["error"])
 		}
-		if got["output"] != "echo: hello" {
+		if got["output"] != "echo: what is the plan" {
 			t.Fatalf("output = %q", got["output"])
 		}
 	})
@@ -227,9 +227,11 @@ func TestConcurrentInputIsSerializedInOrder(t *testing.T) {
 
 	// Three people send at once.
 	var ids []string
-	for _, who := range []string{"alice", "bob", "carol"} {
+	// The text deliberately avoids anyone's name: a message that names a person
+	// in the room is now read as being for them, and no agent answers it.
+	for i, who := range []string{"alice", "bob", "carol"} {
 		_, tr := do(t, "POST", ory.URL+"/v1/sessions/"+sid+"/input",
-			map[string]string{"text": who, "author": who})
+			map[string]string{"text": fmt.Sprintf("line %d", i+1), "author": who})
 		ids = append(ids, tr["id"].(string))
 	}
 	for _, id := range ids {
@@ -246,8 +248,8 @@ func TestConcurrentInputIsSerializedInOrder(t *testing.T) {
 	// Coalescing means these may arrive in one turn or three. What must hold is
 	// that the agent saw them in the order they were said.
 	seen := strings.Join(order, "\n")
-	ai, bi, ci := strings.Index(seen, "alice"), strings.Index(seen, "bob"), strings.Index(seen, "carol")
-	if ai < 0 || bi < ai || ci < bi {
+	a, b, c := strings.Index(seen, "line 1"), strings.Index(seen, "line 2"), strings.Index(seen, "line 3")
+	if a < 0 || b < a || c < b {
 		t.Fatalf("agent saw them out of order:\n%s", seen)
 	}
 }
@@ -491,7 +493,7 @@ func TestRoomWithSeveralAgents(t *testing.T) {
 	}
 
 	do(t, "POST", ory.URL+"/v1/sessions/"+sid+"/input",
-		map[string]string{"text": "hello", "author": "alice"})
+		map[string]string{"text": "what is the plan", "author": "alice"})
 
 	deadline := time.Now().Add(5 * time.Second)
 	var hist []any
@@ -568,7 +570,7 @@ func TestOneAgentFailingDoesNotSinkTheRoom(t *testing.T) {
 	}
 	_, s := do(t, "POST", ory.URL+"/v1/sessions", map[string]any{"agents": []string{"bad", "good"}})
 	sid := s["id"].(string)
-	do(t, "POST", ory.URL+"/v1/sessions/"+sid+"/input", map[string]string{"text": "hi"})
+	do(t, "POST", ory.URL+"/v1/sessions/"+sid+"/input", map[string]string{"text": "what is the plan"})
 
 	deadline := time.Now().Add(5 * time.Second)
 	states := map[string]string{}
@@ -636,9 +638,11 @@ func TestOneAgentNeverOverlapsItself(t *testing.T) {
 	sid := s["id"].(string)
 
 	var ids []string
-	for _, who := range []string{"alice", "bob", "carol"} {
+	// The text deliberately avoids anyone's name: a message that names a person
+	// in the room is now read as being for them, and no agent answers it.
+	for i, who := range []string{"alice", "bob", "carol"} {
 		_, tr := do(t, "POST", ory.URL+"/v1/sessions/"+sid+"/input",
-			map[string]string{"text": who, "author": who})
+			map[string]string{"text": fmt.Sprintf("line %d", i+1), "author": who})
 		ids = append(ids, tr["id"].(string))
 	}
 	for _, id := range ids {
@@ -655,8 +659,8 @@ func TestOneAgentNeverOverlapsItself(t *testing.T) {
 	// One turn or three, depending on how much coalesced. What must hold is the
 	// order the agent saw them in.
 	seen := strings.Join(order, "\n")
-	ai, bi, ci := strings.Index(seen, "alice"), strings.Index(seen, "bob"), strings.Index(seen, "carol")
-	if ai < 0 || bi < ai || ci < bi {
+	a, b, c := strings.Index(seen, "line 1"), strings.Index(seen, "line 2"), strings.Index(seen, "line 3")
+	if a < 0 || b < a || c < b {
 		t.Fatalf("agent saw them out of order:\n%s", seen)
 	}
 }

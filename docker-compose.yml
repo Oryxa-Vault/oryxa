@@ -41,6 +41,9 @@ services:
       # empty board instead of every room you were already finished with. It
       # deletes the durable log — leave it unset anywhere the history matters.
       ORYXA_RESET: ${ORYXA_RESET:-}
+      # Connector that summarises a shared-context list once it outgrows a
+      # prompt. Unset, a long room keeps a count-only marker instead.
+      ORYXA_SUMMARISER: ${ORYXA_SUMMARISER:-}
     volumes:
       # Your connectors. Edit them on the host; restart to reload.
       - ./connectors:/connectors:ro

@@ -79,6 +79,9 @@ type session struct {
 	// move every lane backwards.
 	imu   sync.Mutex
 	inbox []Input
+	// Everyone who has said something here. A name is known to belong to a
+	// person because a person used it, which needs no accounts and no config.
+	speakers map[string]bool
 
 	ctx *sharedctx.Store
 
@@ -300,7 +303,7 @@ func (m *Manager) View(id string) (View, bool) {
 // Submit queues input. Anyone in the room may send; the author travels with it.
 // One input becomes one turn per agent — everyone in the room asked everyone in
 // the room — and each lands in that agent's own lane.
-func (m *Manager) Submit(id, author, text string) (Input, error) {
+func (m *Manager) Submit(id, author, text string, to ...string) (Input, error) {
 	s, ok := m.get(id)
 	if !ok {
 		return Input{}, ErrNoSession
@@ -314,18 +317,33 @@ func (m *Manager) Submit(id, author, text string) (Input, error) {
 
 	// One append, not one turn per agent. Who answers and when is a lane's
 	// business; saying something is not scheduling work for anybody.
+	s.mu.Lock()
+	agents := append([]string(nil), s.agents...)
+	s.mu.Unlock()
+
 	s.imu.Lock()
+	if s.speakers == nil {
+		s.speakers = map[string]bool{}
+	}
+	s.speakers[author] = true
+	// Decided once, when the message lands, so every lane and every replay agree
+	// on who it was for — and so the room can show why an agent stayed quiet.
+	w := decideWake(text, to, agents, m.reg, s.speakers)
 	in := Input{
 		ID:     "in_" + randHex(6),
 		Seq:    len(s.inbox),
 		Author: author,
 		Text:   text,
+		To:     to,
+		Wake:   w.Agents,
+		Why:    w.Why,
 	}
 	s.inbox = append(s.inbox, in)
 	s.imu.Unlock()
 
 	m.emit(s.id, "input.submitted", author, in.ID, map[string]any{
 		"text": text, "seq": in.Seq, "group": in.ID,
+		"wake": w.Agents, "why": w.Why,
 	})
 	for _, l := range s.allLanes() {
 		l.nudge()
@@ -726,6 +744,8 @@ func rebuild(id string, evs []events.Event) *session {
 			Text   string   `json:"text"`
 			Group  string   `json:"group"`
 			Inputs []string `json:"inputs"`
+			Wake   []string `json:"wake"`
+			Why    string   `json:"why"`
 			Error  string   `json:"error"`
 			Kind   string   `json:"kind"`
 			Key    string   `json:"key"`
@@ -757,8 +777,13 @@ func rebuild(id string, evs []events.Event) *session {
 		case "input.submitted":
 			// An input is a thing said, not work owed. It goes to the inbox;
 			// which lanes read it, and when, is replayed from turn.started.
+			if s.speakers == nil {
+				s.speakers = map[string]bool{}
+			}
+			s.speakers[ev.Actor] = true
 			s.inbox = append(s.inbox, Input{
 				ID: ev.Turn, Seq: len(s.inbox), Author: ev.Actor, Text: d.Text,
+				Wake: d.Wake, Why: d.Why,
 			})
 		case "input.withdrawn":
 			for i := range s.inbox {

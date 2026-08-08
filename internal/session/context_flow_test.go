@@ -267,13 +267,13 @@ func TestEmptyRoomSendsNoTemplateMarkers(t *testing.T) {
 	m, _ := setup(t, specTmpl("a", a, "{{context}}\n{{context.plan}}\n{{input}}"))
 	id := room(t, m, "a")
 
-	ask(t, m, id, "hello", 1)
+	ask(t, m, id, "what is the plan", 1)
 
 	got := a.prompt(t, 0)
 	if strings.Contains(got, "{{") {
 		t.Fatalf("template markers reached the agent: %q", got)
 	}
-	if strings.TrimSpace(got) != "hello" {
+	if strings.TrimSpace(got) != "what is the plan" {
 		t.Fatalf("empty room added noise to the prompt: %q", got)
 	}
 }
