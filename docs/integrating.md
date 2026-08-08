@@ -397,6 +397,72 @@ it, and to see that a pinned-only reader stays flat while the room grows.
 represented rather than missing. It warns that a turn answered from a partial room, and follows what was
 read: a reader that never saw a trimmed list is not warned about it.
 
+### Who answers
+
+Every agent in a room reads every message. Only some of them answer it, and a
+connector decides when it is one of them.
+
+That split is what makes a room with seven agents usable. Waking used to mean
+answering, so "ok" cost seven model calls — and an agent could not do the useful
+thing of following a conversation quietly and being worth asking later.
+
+**Declare what your agent engages on:**
+
+```yaml
+name: mkt-spend
+interests: [spend, budget, cost, roi, tooling]
+```
+
+Now "we should use more ai tools, what about cost" reaches it and nothing else.
+Matching is whole-word and case-insensitive; there is no model involved.
+
+The ladder, first match wins:
+
+| rung | example | who answers |
+|---|---|---|
+| addressed | `to: ["mkt-spend"]` on the input | those agents |
+| mentioned | `@mkt-spend what is the number` | that agent |
+| named | `can mkt-spend look at this` | that agent |
+| **a person named** | `arsh what happened with the vendor` | **nobody** |
+| interest | `what about the budget` | agents that declared it |
+| chatter | `ok`, `thanks`, `got it` | **nobody** |
+| open | anything else | everyone |
+
+Two rungs are worth understanding because they are what stop a busy room being
+unusable.
+
+**A person named beats an interest.** `arsh what happened with the vendor
+contract` is a question for Arsh. An agent that declared an interest in
+"vendor" answering it is exactly the over-eagerness the rung exists to stop —
+and a room where asking a colleague something summons every agent is a room
+nobody will use. The room learns who its people are by hearing them speak, so
+this works for anyone who has said something.
+
+**Acknowledgements are not messages.** `ok`, `thanks`, `got it` are most of what
+gets typed, and each was costing one model call per agent.
+
+An agent that stays quiet has not missed anything. Its cursor does not move, so
+when it is finally asked, its turn covers the whole conversation it sat
+through — including the parts addressed to other people.
+
+**When it does not do what you expect**, ask it directly. No server needed:
+
+```bash
+oryxa wake "we should consider using more ai tools" -people priya,arsh
+```
+
+```
+  why        interest: ai
+  wake       mkt-spend
+
+  staying quiet, and what would wake them:
+    mkt-seo    @mkt-seo  ·  interests: seo, ranking, keywords, traffic
+```
+
+Silence is the hardest thing to debug here — nothing errors and the connector
+looks fine — so `wake` is the counterpart to `check`: one tells you an agent can
+be reached, the other whether it would ever be asked.
+
 ### Capabilities
 
 Declare only what is true. Oryxa adapts rather than assuming.

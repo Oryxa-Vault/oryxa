@@ -40,8 +40,8 @@ const (
 
 // Turn is one agent answering everything said since it last spoke.
 type Turn struct {
-	ID    string  `json:"id"`
-	Agent string  `json:"agent"`
+	ID    string    `json:"id"`
+	Agent string    `json:"agent"`
 	State TurnState `json:"state"`
 
 	// Inputs is what this turn is answering — one message in a quiet room,

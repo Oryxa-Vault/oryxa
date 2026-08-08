@@ -122,6 +122,12 @@ func cmdWhich(args []string) {
 	if len(spec.Capabilities) > 0 {
 		fmt.Printf("  %-12s %s\n", "capabilities", strings.Join(spec.Capabilities, ", "))
 	}
+	// What brings this agent into a conversation nobody addressed to it. Shown
+	// beside the rest because "it never answers" and "it answers everything" are
+	// both this line being wrong.
+	if len(spec.Interests) > 0 {
+		fmt.Printf("  %-12s %s\n", "interests", strings.Join(spec.Interests, ", "))
+	}
 	// What this agent contributes to the room. Worth showing here for the same
 	// reason base is: "why is nothing appearing in shared context" is answered
 	// by looking at the rules, and the alternative is opening the file.

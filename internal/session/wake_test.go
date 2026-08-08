@@ -161,7 +161,7 @@ func TestShortQuestionsAndRealSentencesStillReachTheRoom(t *testing.T) {
 		"why?",
 		"is that right?",
 		"the board review is in nine days",
-		"ship it",   // two words, and not an acknowledgement
+		"ship it", // two words, and not an acknowledgement
 		"cancel that",
 	} {
 		if w := decideWake(text, nil, agents, reg, nil); len(w.Agents) != 7 {

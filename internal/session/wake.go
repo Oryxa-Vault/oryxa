@@ -216,3 +216,19 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// WhoWakes exposes the ladder without a room, so a connector author can find out
+// why their agent stayed quiet before wiring anything up.
+//
+// Silence is the hardest thing to debug in this design: nothing errors, nothing
+// is logged at the agent, and the connector looks fine. Being able to ask the
+// question directly — offline, against the files on disk — is the difference
+// between a minute and an afternoon.
+func WhoWakes(text string, to, agents, speakers []string, reg *connector.Registry) (woken []string, why string) {
+	people := map[string]bool{}
+	for _, s := range speakers {
+		people[s] = true
+	}
+	w := decideWake(text, to, agents, reg, people)
+	return w.Agents, w.Why
+}

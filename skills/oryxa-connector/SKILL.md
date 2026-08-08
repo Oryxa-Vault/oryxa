@@ -75,12 +75,12 @@ instructions in a single thread and answers as all of them. Use
 `{{context.pinned}}` · `{{context.<key>}}`
 
 Unknown names are left in place, so a typo appears in the request rather than
-silently becoming empty.
+silently becoming empty. Context keys are the exception — an unwritten key
+renders empty, because a room that just started is not a typo.
 
 `{{input}}` is one message rendered as itself, or — when several were said while
 your agent was busy — an attributed exchange (`alice: …` / `bob: …`) coalesced
-into one turn. A connector needs no change for this; a lone message is unchanged. Context keys are the exception — an unwritten key
-renders empty, because a room that just started is not a typo.
+into one turn. A connector needs no change for this; a lone message is unchanged.
 
 ## Shared context
 
@@ -176,6 +176,33 @@ $.content.parts[*].text           $.content.parts[!thought].text
 The last two warnings matter most: both describe connectors that **pass while
 being wrong**. An answer containing the model's private reasoning still looks
 like an answer, and nothing errors.
+
+## Who answers
+
+Every agent reads every message; only some answer. Declare what yours engages on:
+
+```yaml
+interests: [spend, budget, cost, roi]
+```
+
+First match wins: explicit `to:` → `@mention` → the agent's name → **a person's
+name (nobody answers)** → interest → **chatter like "ok"/"thanks" (nobody)** →
+otherwise everyone.
+
+A person named outranks an interest on purpose: "arsh what happened with the
+vendor" is for Arsh, and an agent that declared "vendor" answering it is the
+behaviour that makes a busy room unusable.
+
+An agent that stays quiet loses nothing. Its cursor holds, so when it is finally
+asked its turn covers everything it sat through.
+
+```bash
+oryxa wake "a message someone would type" -people priya,arsh
+```
+
+Prints who answers and why, and for everyone silent, what would have reached
+them. Use it whenever an agent is quieter or louder than expected — it needs no
+running server.
 
 ## Declare only what is true
 

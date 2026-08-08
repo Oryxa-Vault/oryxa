@@ -63,6 +63,8 @@ func main() {
 		cmdWhich(args)
 	case "check":
 		check(args)
+	case "wake":
+		cmdWake(args)
 
 	// rooms — these talk to a running server
 	case "sessions":
@@ -127,6 +129,7 @@ Connectors                                    (read files; no server needed)
   agents                list configured connectors
   which <agent>         where a connector points, and which file said so
   check <agent>         probe an agent with a real turn
+  wake "a message"      who would answer it, and why
 
 Rooms                                         (talk to a running server)
   open <agent>...       start a session with one or more agents
