@@ -426,12 +426,36 @@ Go needed. [CONTRIBUTING.md](CONTRIBUTING.md) has the three-step version.
 If you tried Oryxa and got stuck, an issue saying where you got lost is worth
 real work to us: it tells us exactly where the docs are wrong.
 
+## Building on it
+
+**[`openapi.yaml`](openapi.yaml)** is the contract — every route, every shape,
+written against the handlers rather than from memory. A test compares it to the
+registered routes in both directions, so it cannot drift into being almost right.
+
+**A Go client**, if you want one:
+
+```go
+import "github.com/oryxa/oryxa/client"
+
+c := client.New("http://localhost:8080")
+room, _ := c.Open(ctx, "langgraph", "adk")
+in, _ := c.Say(ctx, room.ID, "alice", "what should we do about the budget")
+// in.Wake and in.Why record who it reached, and on what grounds
+c.Stream(ctx, room.ID, 0, func(ev client.Event) bool { … })
+```
+
+Nothing requires it. The HTTP API is the contract and any language can call it;
+this exists so a Go service does not write the same twenty request shapes again.
+
 ## Stability
 
 `/v1` is stable. The connector spec is stable and additive — new fields, never
-changed meanings — so a connector written today keeps working. Go packages are
-`internal/` until 1.0: the interfaces are young and still moving, and exporting
-one is a promise that cannot be withdrawn.
+changed meanings — so a connector written today keeps working.
+
+`client` is the one exported Go package, and only because it is a thin wrapper
+over `/v1`: it is stable exactly as far as `/v1` is. Everything else stays
+`internal/` until 1.0 — those interfaces are young, and exporting one is a
+promise that cannot be withdrawn.
 
 ## Licence
 

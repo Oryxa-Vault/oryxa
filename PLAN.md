@@ -391,8 +391,10 @@ cost three backward-compatible additions to core, so this tier is proven rather
 than hoped for.
 
 **Tier 2 — build a product on the API.** Twenty endpoints and an SSE stream with
-`?since=` replay. The viewer is the existence proof: it is an API client that
-happens to ship in the binary, and it can be replaced entirely.
+`?since=` replay, described in [openapi.yaml](openapi.yaml) and kept honest by a
+test that diffs it against the registered routes. The viewer is the existence
+proof: it is an API client that happens to ship in the binary, and it can be
+replaced entirely. A Go client lives in `client/`.
 
 **Tier 3 — extend the runtime.** Closed. Every package is `internal/`, which in
 Go is enforced rather than advisory, so nothing here can be imported. That is
@@ -420,7 +422,7 @@ Two things are still missing before that path is real:
 
 | | |
 |---|---|
-| **Spec schema** | a UI has to hand-code its form and cannot validate before submitting, so users learn a connector is malformed from a 400 rather than from the field. `Validate()` already has the messages; they are just unreachable until you post. The same artifact the API contract needs. |
+| **Spec schema** | [openapi.yaml](openapi.yaml) now carries a `Connector` schema, so a UI can generate its form and validate shape before posting. What it still cannot check locally is the rules `Validate()` enforces beyond shape — a duplicate context key, a `from` that is neither `$text` nor a selector — so those are still learned from a 400. |
 | **Secrets** | `GET /v1/agents` returns a spec verbatim, headers included. A connector written by hand keeps its credential out of the file with `{{env.X}}`; a UI-registered one cannot set server-side environment, so the key goes in literally and is then readable by anyone who can list agents. Needed: `{{secret.name}}`, resolved at call time, write-only over the API, never returned. Composes with read scoping rather than fighting it. |
 
 And one that is now fixed: **registrations are durable.** They were held in memory

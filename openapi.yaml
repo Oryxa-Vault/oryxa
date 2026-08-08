@@ -1,0 +1,768 @@
+openapi: 3.1.0
+
+# The HTTP contract. `/v1` is stable: fields are added, never repurposed.
+#
+# Written against the handlers rather than from memory — every shape here was
+# read out of internal/api before being written down, because a contract that is
+# almost right is worse than none. If this and the code ever disagree, the code
+# is right and this is a bug.
+
+info:
+  title: Oryxa
+  version: "1"
+  summary: Makes single-user agent frameworks multi-user.
+  description: |
+    A room holds several people and several agents. Everything that happens is an
+    event; sessions and shared context are folds over that log, which is why late
+    join, replay, audit and restart recovery are one mechanism rather than four.
+
+    Two things are worth knowing before reading the endpoints.
+
+    **Submitting is not scheduling.** `POST /input` appends one message and
+    returns. Who answers, and when, is each agent's own business — the response
+    tells you who it woke and why. An agent that stays quiet has not missed it;
+    its next turn covers everything it sat through.
+
+    **A connector is data.** `POST /agents` takes the same object you would write
+    as YAML, so an agent can be added at runtime with no restart and no
+    filesystem access. Registrations are durable and attributed.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8080
+    description: A local Oryxa.
+
+security:
+  - bearer: []
+  - {}   # a server started without -token accepts everything
+
+tags:
+  - name: agents
+    description: Connectors — how Oryxa reaches an agent.
+  - name: sessions
+    description: Rooms.
+  - name: context
+    description: What a room holds, beside its transcript.
+  - name: log
+    description: The event log, and the live stream over it.
+  - name: auth
+
+paths:
+  /health:
+    get:
+      tags: [log]
+      summary: Liveness.
+      security: []
+      responses:
+        "200":
+          description: Serving.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { status: { type: string, const: ok } }
+
+  /v1/agents:
+    get:
+      tags: [agents]
+      summary: Every configured connector.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents: { type: array, items: { $ref: "#/components/schemas/Connector" } }
+    post:
+      tags: [agents]
+      summary: Register or replace a connector.
+      description: |
+        Takes JSON, or YAML with `Content-Type: application/yaml`. Same object
+        either way — YAML is how a person writes one on disk, not the interface.
+
+        Durable: the registration is an event, restored on restart and attributed
+        to whoever made it. A name already loaded from a file is overridden.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Connector" }
+          application/yaml:
+            schema: { type: string }
+      responses:
+        "201":
+          description: Registered and live.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Connector" }
+        "400": { $ref: "#/components/responses/Invalid" }
+
+  /v1/agents/{name}:
+    parameters: [{ $ref: "#/components/parameters/AgentName" }]
+    get:
+      tags: [agents]
+      summary: One connector.
+      description: |
+        Returns the spec verbatim, headers included. A credential written
+        literally into `headers` is therefore readable here — use
+        `{{env.NAME}}` so the value stays in the server's environment.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Connector" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [agents]
+      summary: Remove a connector.
+      description: Sticks across a restart, even for one loaded from a file.
+      responses:
+        "204": { description: Gone. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/agents/{name}/check:
+    parameters: [{ $ref: "#/components/parameters/AgentName" }]
+    post:
+      tags: [agents]
+      summary: Probe an agent with a real turn.
+      description: |
+        Runs the connector against the live agent and reports what came back,
+        including the ways a connector can pass while being quietly wrong —
+        reasoning leaking into the answer, output arriving twice, selectors that
+        matched nothing. This is the Test Connection button.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                probe: { type: string, description: What to say. Defaults to a ping. }
+      responses:
+        "200":
+          description: The agent answered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckResult" }
+        "502":
+          description: Unreachable, or it answered in a way the connector cannot read.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckResult" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions:
+    get:
+      tags: [sessions]
+      summary: Every room, newest first.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions: { type: array, items: { $ref: "#/components/schemas/SessionSummary" } }
+    post:
+      tags: [sessions]
+      summary: Open a room.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agents:
+                  type: array
+                  items: { type: string }
+                  description: Everyone in the room.
+                agent:
+                  type: string
+                  description: A single agent. Kept for callers written before rooms held several.
+      responses:
+        "201":
+          description: Open.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionSummary" }
+        "400": { $ref: "#/components/responses/Invalid" }
+
+  /v1/sessions/{id}:
+    parameters: [{ $ref: "#/components/parameters/SessionID" }]
+    get:
+      tags: [sessions]
+      summary: A room's current state.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionView" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/input:
+    parameters: [{ $ref: "#/components/parameters/SessionID" }]
+    post:
+      tags: [sessions]
+      summary: Say something to the room.
+      description: |
+        Appends one message. It does not create turns — who answers is decided
+        here and returned as `wake` and `why`, and the agents woken take their
+        turns on their own schedule.
+
+        Leave `to` unset and the room's own rules apply: an agent that was
+        @mentioned, named, or has declared an interest in something you said.
+        A message naming a person who has spoken here reaches nobody, and neither
+        does an acknowledgement like "ok". Anything else reaches everyone.
+
+        `oryxa wake "your message"` answers all of this offline.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1 }
+                author:
+                  type: string
+                  description: |
+                    Who is speaking. Ignored when the server runs with
+                    `-trust-header`, which takes it from the proxy instead.
+                to:
+                  type: array
+                  items: { type: string }
+                  description: Agents to address explicitly, overriding every rule.
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Input" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401":
+          description: The request did not come through the trusted proxy.
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The room is closed. }
+
+  /v1/sessions/{id}/input/{inputId}:
+    parameters:
+      - { $ref: "#/components/parameters/SessionID" }
+      - name: inputId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [sessions]
+      summary: Withdraw a message nobody has read yet.
+      description: |
+        Marks rather than removes, so positions never shift. An agent that
+        already read it keeps its answer — withdrawing is regret, not time travel.
+      responses:
+        "204": { description: Withdrawn. }
+        "404": { description: No such message, or it was already withdrawn. }
+
+  /v1/sessions/{id}/cancel:
+    parameters: [{ $ref: "#/components/parameters/SessionID" }]
+    post:
+      tags: [sessions]
+      summary: Stop whatever is running.
+      description: Abandons the in-flight request. A cancelled turn writes nothing to context.
+      responses:
+        "202": { description: Cancelling. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/close:
+    parameters: [{ $ref: "#/components/parameters/SessionID" }]
+    post:
+      tags: [sessions]
+      summary: Close the room.
+      responses:
+        "204": { description: Closed. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/context:
+    parameters: [{ $ref: "#/components/parameters/SessionID" }]
+    get:
+      tags: [context]
+      summary: What the room holds.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  context: { type: array, items: { $ref: "#/components/schemas/ContextEntry" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/context/{key}:
+    parameters:
+      - { $ref: "#/components/parameters/SessionID" }
+      - { $ref: "#/components/parameters/ContextKey" }
+    post:
+      tags: [context]
+      summary: Write to shared context.
+      description: |
+        Send `append` for an add-only list, or `value` for a single mutable
+        value. An entry is one or the other for life; the wrong one is a 409.
+
+        A value write may carry `If-Match: <version>`. Without it the write
+        overwrites. With it, a stale write is refused **with what is current**,
+        so you can merge rather than re-read and guess.
+      parameters:
+        - name: If-Match
+          in: header
+          schema: { type: integer, format: int64 }
+          description: The version you last saw. Value writes only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                append: { type: string, description: Add to an add-only list. }
+                value: { type: string, description: Replace a single value. }
+                author: { type: string }
+              oneOf:
+                - required: [append]
+                - required: [value]
+      responses:
+        "200":
+          description: Written.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContextEntry" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "409":
+          description: |
+            A stale value write, or the wrong kind for this key. Carries what is
+            current so the caller can merge.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conflict" }
+
+  /v1/sessions/{id}/context/{key}/pin:
+    parameters:
+      - { $ref: "#/components/parameters/SessionID" }
+      - { $ref: "#/components/parameters/ContextKey" }
+    post:
+      tags: [context]
+      summary: Pin or unpin an entry.
+      description: |
+        Pinned entries are what `{{context.pinned}}` renders — the curated set
+        meant to stay small enough to put in front of a model as a room grows.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pinned: { type: boolean, default: true }
+                author: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContextEntry" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/events:
+    parameters:
+      - { $ref: "#/components/parameters/SessionID" }
+      - { $ref: "#/components/parameters/Since" }
+    get:
+      tags: [log]
+      summary: The log, from a point.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array, items: { $ref: "#/components/schemas/Event" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/stream:
+    parameters:
+      - { $ref: "#/components/parameters/SessionID" }
+      - { $ref: "#/components/parameters/Since" }
+    get:
+      tags: [log]
+      summary: Replay, then follow, over SSE.
+      description: |
+        `?since=0` replays the whole room and then follows live. Late join,
+        reconnect and replay are the same code path, which is the payoff of the
+        log being the source of truth rather than a side effect.
+
+        Frames carry no `event:` field, so `EventSource.onmessage` fires for all
+        of them. `id:` carries the sequence number, so a reconnect resumes with
+        `Last-Event-ID` and loses nothing.
+      responses:
+        "200":
+          description: An event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /v1/auth/status:
+    get:
+      tags: [auth]
+      security: []
+      summary: Whether this server wants a token, and who it thinks you are.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: { type: string, enum: [open, token] }
+                  authed: { type: boolean }
+                  identity:
+                    type: string
+                    enum: [claimed, trusted]
+                    description: |
+                      `claimed` means authors are self-declared and the log
+                      records claims rather than people. `trusted` means a proxy
+                      in front of Oryxa is establishing identity.
+                  author: { type: string, description: Present only when identity is trusted. }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Exchange a token for a cookie.
+      description: |
+        For the viewer: `EventSource` cannot set an `Authorization` header, and
+        the stream needs authenticating too. API clients should send the bearer
+        header instead and skip this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { token: { type: string } }
+      responses:
+        "200":
+          description: Accepted; a session cookie is set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  auth: { type: string, enum: [open, token] }
+        "401": { description: Not that token. }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: |
+        The shared token, if the server was started with one. Off by default,
+        and the server says so at startup.
+
+  parameters:
+    SessionID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, examples: [s_2f1a9c4e] }
+    AgentName:
+      name: name
+      in: path
+      required: true
+      schema: { type: string, examples: [langgraph] }
+    ContextKey:
+      name: key
+      in: path
+      required: true
+      schema: { type: string, examples: [findings] }
+    Since:
+      name: since
+      in: query
+      schema: { type: integer, format: int64, default: 0 }
+      description: Return events after this sequence number. `0` is everything.
+
+  responses:
+    NotFound:
+      description: No such thing.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Invalid:
+      description: The request could not be used.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties: { error: { type: string } }
+
+    Connector:
+      type: object
+      description: |
+        How to reach one agent. Nothing in Oryxa's core knows any framework's
+        name; everything framework-specific lives here.
+      required: [name, base, turn]
+      properties:
+        name: { type: string }
+        base:
+          type: string
+          description: |
+            Templated, so one file works on a machine and in a container —
+            `http://{{env.ORYXA_AGENT_HOST}}:2024`.
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Use `{{env.NAME}}` for credentials; this object is readable over the API.
+        vars:
+          type: object
+          additionalProperties: { type: string }
+        capabilities:
+          type: array
+          items: { type: string, enum: [stream, multi_turn, cancel] }
+          description: Declare only what is true. Oryxa adapts rather than assuming.
+        interests:
+          type: array
+          items: { type: string }
+          description: |
+            Words that bring this agent into a conversation nobody addressed to
+            it. Whole-word, case-insensitive, no model involved.
+        timeout: { type: string, examples: ["5m"] }
+        open:
+          allOf: [{ $ref: "#/components/schemas/Step" }]
+          description: Runs once per room, to establish continuity on the agent's side.
+        turn: { $ref: "#/components/schemas/Step" }
+        context:
+          type: array
+          items: { $ref: "#/components/schemas/ContextRule" }
+          description: What this agent leaves behind for everyone else.
+
+    Step:
+      type: object
+      description: One HTTP call. Strings anywhere in it may contain `{{...}}`.
+      properties:
+        method: { type: string, default: POST }
+        path: { type: string }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        body: { description: Any JSON. Every string in it is templated. }
+        capture:
+          type: object
+          additionalProperties: { type: string }
+          description: "Selectors pulling values out of the response, e.g. `handle: $.thread_id`."
+        response: { $ref: "#/components/schemas/ResponseSpec" }
+
+    ResponseSpec:
+      type: object
+      properties:
+        format: { type: string, enum: [json, sse, ndjson], default: json }
+        text:
+          type: array
+          items: { type: string }
+          description: Selectors tried in order; the first that matches wins.
+        done: { type: string }
+        error: { type: string }
+        when:
+          type: string
+          description: |
+            Which chunks count. Streaming APIs often send deltas *and* a final
+            aggregated message; without a gate the answer arrives twice.
+            `$.partial`, `$.type == TEXT_MESSAGE_CONTENT`, `$.type != REASONING`.
+
+    ContextRule:
+      type: object
+      required: [key, from]
+      properties:
+        key: { type: string }
+        kind: { type: string, enum: [append, value], default: append }
+        from:
+          type: string
+          description: |
+            `$text` for whatever the agent said this turn, or a selector into the
+            response payload. A selector cannot drift the way `$text` can.
+        when: { type: string, description: Gates which chunks a selector reads. }
+        pin: { type: boolean }
+
+    CheckResult:
+      type: object
+      properties:
+        agent: { type: string }
+        ok: { type: boolean }
+        reachable: { type: boolean }
+        error: { type: string }
+        capabilities: { type: array, items: { type: string } }
+        warnings:
+          type: array
+          items: { type: string }
+          description: |
+            Ways this connector can pass while being wrong. Worth reading even
+            when `ok` is true.
+        open:
+          type: object
+          properties:
+            ok: { type: boolean }
+            handle: { type: string }
+            error: { type: string }
+        turn:
+          type: object
+          properties:
+            ok: { type: boolean }
+            ms: { type: integer }
+            parts: { type: integer }
+            text_len: { type: integer }
+            sample: { type: string }
+            error: { type: string }
+
+    SessionSummary:
+      type: object
+      properties:
+        id: { type: string }
+        agents: { type: array, items: { type: string } }
+        agent: { type: string, description: The first agent. Kept for older clients. }
+        state: { type: string, enum: [idle, running, closed] }
+        handles:
+          type: object
+          additionalProperties: { type: string }
+          description: Each agent's own conversation id on its own side.
+        created: { type: string, format: date-time }
+
+    SessionView:
+      allOf:
+        - $ref: "#/components/schemas/SessionSummary"
+        - type: object
+          properties:
+            waiting:
+              type: array
+              items: { $ref: "#/components/schemas/Input" }
+              description: Said, but not yet read by every agent.
+            current: { $ref: "#/components/schemas/Turn" }
+            history: { type: array, items: { $ref: "#/components/schemas/Turn" } }
+
+    Input:
+      type: object
+      description: One thing someone said to the room.
+      properties:
+        id: { type: string }
+        seq: { type: integer, description: Position in the room's inbox. }
+        author: { type: string }
+        text: { type: string }
+        to: { type: array, items: { type: string } }
+        wake:
+          type: array
+          items: { type: string }
+          description: Which agents this reached. Empty means nobody answers it.
+        why:
+          type: string
+          description: |
+            Why they were woken — `addressed`, `mentioned`, `named`,
+            `interest: budget`, `for arsh`, `chatter`, `open to the room`.
+        withdrawn: { type: boolean }
+        state: { type: string, description: Always `queued`. Kept for older clients. }
+        group: { type: string, description: Equals `id`. Kept for older clients. }
+
+    Turn:
+      type: object
+      description: One agent answering everything said since it last spoke.
+      properties:
+        id: { type: string }
+        agent: { type: string }
+        state: { type: string, enum: [queued, running, done, failed, cancelled] }
+        inputs:
+          type: array
+          items: { $ref: "#/components/schemas/Input" }
+          description: |
+            What this turn answers — one message in a quiet room, several in a
+            busy one, because messages arriving during a turn coalesce into the
+            next one rather than queueing behind it.
+        author: { type: string }
+        text: { type: string, description: The inputs rendered as the agent saw them. }
+        output: { type: string }
+        error: { type: string }
+        group: { type: string }
+
+    ContextEntry:
+      type: object
+      properties:
+        key: { type: string }
+        kind: { type: string, enum: [append, value] }
+        pinned: { type: boolean }
+        value: { type: string, description: Value entries only. }
+        version: { type: integer, format: int64, description: Pass as `If-Match` to write safely. }
+        by: { type: string }
+        items:
+          type: array
+          description: Append entries only.
+          items:
+            type: object
+            properties:
+              by: { type: string }
+              at: { type: string, format: date-time }
+              text: { type: string }
+              seq: { type: integer, format: int64 }
+        rollup:
+          type: object
+          description: |
+            A recorded summary standing in for items too old to fit in a prompt.
+            Written once and replayed as data — a summary is a model's output and
+            recomputing it would give a different room after every restart.
+          properties:
+            text: { type: string }
+            covers: { type: integer }
+            through: { type: integer, format: int64 }
+            by: { type: string }
+
+    Conflict:
+      type: object
+      description: A refused write, carrying what is current so you can merge.
+      properties:
+        error: { type: string }
+        key: { type: string }
+        current: { type: string }
+        version: { type: integer, format: int64 }
+        by: { type: string }
+
+    Event:
+      type: object
+      properties:
+        seq: { type: integer, format: int64 }
+        session: { type: string }
+        ts: { type: string, format: date-time }
+        kind:
+          type: string
+          description: |
+            `session.created` · `session.opened` · `session.closed` ·
+            `input.submitted` · `input.withdrawn` ·
+            `turn.started` · `turn.finished` · `turn.failed` · `turn.cancelled` ·
+            `turn.empty` — succeeded and said nothing, with the connector's own
+            selectors attached ·
+            `output.part` · `context.appended` · `context.set` ·
+            `context.pinned` · `context.unpinned` · `context.rejected` ·
+            `context.rolled_up` · `rollup.failed` · `conflict.rejected`
+        actor: { type: string }
+        turn: { type: string }
+        data:
+          description: |
+            Shape depends on `kind`. `turn.started` carries a `context` digest —
+            the room version, which bindings the template read, what they cost in
+            characters, and how much was left out.
