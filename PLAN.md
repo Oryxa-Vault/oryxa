@@ -34,9 +34,9 @@ People talk to a room; Oryxa drives the agents in it.
      └──────┼──────┘
             ▼
    ┌────────────────┐
-   │ Oryxa session  │  input queue · event log · live stream
+   │ Oryxa session  │  inbox · event log · live stream
    └───┬────────┬───┘
-       │        │  one turn at a time, per agent
+       │        │  each reads everything, answers when it is for them
        ▼        ▼
    ┌───────┐ ┌───────┐
    │ agent │ │ agent │  each keeps its own conversation, unchanged
@@ -94,6 +94,20 @@ per agent, and would leave recording the result at the model's discretion. A
 rule works everywhere and cannot be talked out of. Context is snapshotted at turn
 start, so parallel lanes never rewrite each other's questions, and a failed turn
 writes nothing.
+
+**Who answers.** Reading and speaking are separate acts. A lane reads everything
+and speaks only when a message is for it, decided once when the message lands by
+a ladder of free string matching: `to:`, @mention, the agent's own name, a person
+named (nobody answers), a declared interest, an acknowledgement (nobody), and
+otherwise everyone. The decision and its reason are recorded on the input, so a
+room can show why an agent spoke or stayed out, and `oryxa wake` answers the same
+question offline without a server.
+
+Two rungs carry it. A person named outranks an interest, because "arsh, what
+happened with the vendor" is for Arsh rather than for whichever agent declared
+"vendor". And acknowledgements wake nobody, because "ok" and "thanks" are most of
+what gets typed and each was costing one model call per agent. Measured on seven
+live agents over nineteen messages: 35 model calls instead of 133.
 
 **Rollup.** What falls off the render bound is summarised rather than merely
 counted, by a connector named with `-summariser`. The constraint that shapes it:
@@ -160,12 +174,16 @@ answer), and one agent failing without taking the room down.
 | **Mid-turn writes** | rules apply when a turn finishes. An agent that wants to publish a finding *while* still working would need a callback — `{{callback_url}}` exists in the template context but nothing populates it yet. |
 | **Presence** | who is here, who is typing. Now load-bearing rather than cosmetic: owner precedence in §7.4 is built on it. |
 | **Participants** | agents have no owners. Read scoping, owner-waking and directed output all wait on this one idea — see §7.2. |
-| **Addressing** | every input wakes every agent; there is no way to speak to one. §7 replaces the fan-out rather than patching it. |
 | **Hash chaining** | events are ordered and attributed but not tamper-evident. Chaining each event to its predecessor's hash would make the log verifiable rather than merely durable — worth having before anyone treats it as an audit record. |
 | **Usage accounting** | `turn.started` records what the *room* cost a prompt in characters, which is a different thing from what the *model* charged. No event carries token counts, so cost per turn cannot be derived from the log. |
 
 Read scoping is the one that blocks real use. Participants is the one the most
 other things wait on — see §7.
+
+One hole worth naming in what did ship: the room learns a name belongs to a
+person by hearing that person speak, so someone addressed before they have said
+anything is not recognised and the message reaches every agent instead. Harmless
+and self-correcting, and participants closes it properly.
 
 Cancel is no longer unexercised: `TestCancelledTurnWritesNothing` drives it end
 to end. What remains untested is the capability path, where the agent is told to
@@ -249,9 +267,10 @@ This also removed the need for a separate transcript binding: what a turn is
 built *from* is everything since the cursor, rendered with authors when there is
 more than one message in it.
 
-What remains of §7 is the wake decision — every lane still reads everything.
-Coalescing is what makes that survivable; the ladder in §7.3 is what would make
-it cheap.
+§7.3's ladder shipped alongside this, so a lane now reads everything and speaks
+only when a message is for it. What remains of §7 is participants — and with them
+owner precedence, and the semantic and router rungs if the free ones prove
+insufficient, which should be measured rather than assumed.
 
 ### 7.2 Participants
 
@@ -263,7 +282,7 @@ largest gap in §4), waking an agent because its *owner* was addressed, and
 directed output below. Worth building once, deliberately, rather than three
 times in three shapes.
 
-### 7.3 The wake ladder
+### 7.3 The wake ladder — **built**
 
 With reception free, one question remains, and it is the only judgment the
 framework makes on its own behalf: **when this lands, who speaks?**

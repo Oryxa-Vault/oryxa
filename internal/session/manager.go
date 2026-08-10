@@ -1,13 +1,22 @@
-// Package session owns the room: many people, one agent, one turn at a time.
+// Package session owns the room: many people, many agents, one event log.
 //
-// Turns are serialized because the agent's own conversation is serialized. A
-// session that ran turns concurrently would be lying about what is underneath,
-// so input arriving mid-turn queues rather than interleaving.
+// Three things shape everything here.
 //
-// Concurrency rule: every mutable field of a Session or Turn is guarded by
-// Session.mu, and nothing outside this package ever receives a pointer to one.
-// Readers get value copies, so an HTTP handler can never encode a struct while
-// the turn loop is writing it.
+// Serialization is per agent, not per room. An agent's own conversation is
+// sequential so its turns must not overlap, but two agents have two
+// conversations and no reason to wait on each other. One goroutine per lane
+// gives strict order within an agent and full parallelism across them.
+//
+// Listening and speaking are different acts. Saying something appends one event
+// and schedules nothing; a lane holds a cursor into what the room has said and
+// takes everything since it as a single turn when it next speaks. So a message
+// arriving mid-turn costs a round rather than a turn, an agent that stays quiet
+// owns no pending work, and being behind the speaker stops being a backlog.
+//
+// Concurrency rule: a lane's mutable state is guarded by its own mutex, the
+// room's inbox by its own, and nothing outside this package ever receives a
+// pointer to either. Readers get value copies, so an HTTP handler can never
+// encode a struct while a turn loop is writing it.
 package session
 
 import (
@@ -66,9 +75,9 @@ type session struct {
 	mu    sync.Mutex
 	state State
 
-	// One lane per agent. Each carries that agent's queue, its conversation
-	// handle, and its own turn loop — so turns are strictly ordered within an
-	// agent and run in parallel across agents.
+	// One lane per agent: a cursor into the inbox, a conversation handle, and a
+	// turn loop — so turns are strictly ordered within an agent and run in
+	// parallel across agents.
 	lanes map[string]*lane
 
 	hmu     sync.Mutex
@@ -96,12 +105,6 @@ type session struct {
 	rollups rollupState
 
 	closed chan struct{}
-}
-
-func (s *session) lane(agent string) *lane {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lanes[agent]
 }
 
 func (s *session) allLanes() []*lane {
@@ -165,8 +168,8 @@ func NewManager(reg *connector.Registry, exec *connector.Executor, log events.St
 	}
 }
 
-// Create opens a room. More than one agent may be present: input then fans out
-// to each of them, one turn apiece, still one turn at a time.
+// Create opens a room. More than one agent may be present; which of them
+// answers any given message is decided when that message lands.
 func (m *Manager) Create(agents ...string) (Summary, error) {
 	if len(agents) == 0 {
 		return Summary{}, fmt.Errorf("%w: none given", ErrNoAgent)

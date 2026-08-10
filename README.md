@@ -8,7 +8,8 @@ where someone left off. That's the job.
 
 > To the framework, Oryxa is one user. To your team, it's a shared room.
 
-Status: **M1** — connectors, rooms (many people, many agents), event log, live stream, viewer.
+Status: **v0.3** — connectors, rooms, shared context agents can read and write,
+an event log everything is a fold over, live stream, viewer.
 
 > **Run it locally, not on the open internet.** One token currently opens every
 > session and there is no participant concept, so anyone with the token can read
@@ -47,11 +48,10 @@ framework we haven't tested — that's one YAML file, no Go required. See
 in the composer. Both tabs are in the same room, watching the same agent.
 
 **Several agents in one room:** click more than one agent before creating the
-session. Input fans out to each — one question, one answer per framework. Each
-gets its own lane: its own queue, its own goroutine, its own conversation with
-its own framework. They answer **in parallel**, so a room costs its slowest
-agent rather than the sum of all of them. One agent failing does not stop the
-others.
+session. Each gets its own lane: its own cursor into what the room has said, its
+own goroutine, its own conversation with its own framework. They answer **in
+parallel**, so a room costs its slowest agent rather than the sum of all of them.
+One agent failing does not stop the others.
 
 ```bash
 curl -X POST localhost:8080/v1/sessions \
@@ -63,9 +63,21 @@ oryxa check langgraph          # probe a connector, no server needed
 oryxa serve                    # API + viewer, no browser
 ```
 
-Bob's input queues if Alice's turn is still running, and runs next. Anyone
-joining later replays the whole history and then follows live — `?since=` makes
-late join, reconnect and replay the same code path.
+Say something while an agent is mid-turn and it does not queue behind it: the
+agent picks it up with its next turn, along with anything else said meanwhile.
+Eight messages typed at human speed against a slow agent ran as two turns, not
+eight. Anyone joining later replays the whole history and then follows live —
+`?since=` makes late join, reconnect and replay the same code path.
+
+**Not everyone answers everything.** A connector says what it engages on, and
+the room works out who a message is for — an agent @mentioned or named, one that
+declared an interest in something you said, nobody at all when you are asking a
+colleague by name or just saying "thanks". Measured on seven live agents: 35
+model calls instead of 133.
+
+```bash
+oryxa wake "we should consider using more ai tools"   # who answers, and why
+```
 
 ---
 
@@ -159,6 +171,7 @@ oryxa launch window         run and open the viewer in a browser
 oryxa agents                list configured connectors
 oryxa which <agent>         where a connector points, and which file said so
 oryxa check <agent>         probe an agent with a real turn
+oryxa wake "a message"      who would answer it, and why
 ```
 
 **Rooms** — talk to a running server
@@ -313,6 +326,31 @@ Context is snapshotted when a turn starts, so an agent finishing mid-flight
 never rewrites the question another was asked. A failed or cancelled turn writes
 nothing: half an answer recorded as a finding is worse than no finding.
 
+### A long room stops forgetting
+
+A list is bounded where it is **rendered**, not where it is stored: twenty items
+reach a prompt and the log keeps everything. Left there, a long room forgets
+quietly — an agent answering from a partial room sounds exactly as confident as
+one answering from a whole one.
+
+Point Oryxa at a summariser and what fell off gets said instead of counted:
+
+```bash
+oryxa serve -summariser room-summariser
+```
+
+```
+findings:
+- (30 earlier items, summarised) Checkout returned 503s from 14:02, traced to a
+  pool capped at 10 against 40 workers. A rollback was attempted twice.
+- the error rate is back under 1 percent
+```
+
+The summariser is an ordinary connector, so this is a slot rather than a model
+dependency — unconfigured, the count-only marker stays and Oryxa still runs with
+no API key. A summary is written **once** and replayed as data: it is a model's
+output, and recomputing it would give a different room after every restart.
+
 ## Docker
 
 ```bash
@@ -333,7 +371,7 @@ POST   /v1/agents/{name}/check           probe with a real turn
 
 POST   /v1/sessions                      {agent} -> session
 GET    /v1/sessions/{id}                 state, queue, history
-POST   /v1/sessions/{id}/input           {text, author} — queues if busy
+POST   /v1/sessions/{id}/input           {text, author, to?} — returns who it woke
 DELETE /v1/sessions/{id}/input/{tid}     withdraw a queued turn
 POST   /v1/sessions/{id}/cancel          stop the running turn
 POST   /v1/sessions/{id}/close
@@ -446,6 +484,30 @@ c.Stream(ctx, room.ID, 0, func(ev client.Event) bool { … })
 
 Nothing requires it. The HTTP API is the contract and any language can call it;
 this exists so a Go service does not write the same twenty request shapes again.
+
+### The contract, and a client
+
+[`openapi.yaml`](openapi.yaml) is the HTTP contract — every route, every shape,
+written against the handlers rather than from memory. A test fails if the code
+and the file disagree, in either direction.
+
+For Go, [`client/`](client/) wraps it:
+
+```go
+c := client.New("http://localhost:8080")
+room, _ := c.Open(ctx, "researcher", "critic")
+
+in, _ := c.Say(ctx, room.ID, "priya", "what should we do about the budget")
+// in.Wake = ["researcher"], in.Why = "interest: budget"
+
+c.Stream(ctx, room.ID, 0, func(ev client.Event) bool {
+    fmt.Println(ev.Kind, ev.Actor)
+    return true
+})
+```
+
+It is the only non-internal Go package, and the reason is narrow: it is a thin
+wrapper over `/v1`, so it is stable exactly as far as `/v1` is.
 
 ## Stability
 

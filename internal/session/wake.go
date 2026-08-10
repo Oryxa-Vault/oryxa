@@ -22,28 +22,25 @@ import (
 //
 // The rungs, in order, first match wins:
 //
-//	addressed   `to:` on the input, or @name in the text
-//	named       the agent's own name appears
-//	interested  a word the connector declared it engages on
-//	someone's   the text names a person who has spoken here, and no agent
-//	            matched — so this is people talking, and agents stay out
-//	open        nothing matched: everyone answers, which is what the room did
-//	            before any of this existed
+//	addressed   `to:` on the input
+//	mentioned   @name
+//	named       the agent's own name, in passing
+//	for a person the text names someone who has spoken here — so this is people
+//	            talking, and no agent answers it
+//	interest    a word the connector declared it engages on
+//	chatter     an acknowledgement: "ok", "thanks", "got it". Nobody answers
+//	open        nothing matched: everyone does, which is what the room did before
+//	            any of this existed
 //
-// The last two are what make a room of seven usable. Without "someone's", asking
-// a colleague a question summons every agent in the building.
+// Two of those are what make a room of seven usable rather than exhausting.
+// Without the person rung, asking a colleague a question summons every agent in
+// the building — and it sits above `interest` deliberately, because "arsh, what
+// happened with the vendor" is for Arsh and not for whichever agent declared an
+// interest in "vendor". Without `chatter`, "ok" costs seven model calls, and in
+// a real room that is most of the traffic.
 type wake struct {
 	Agents []string `json:"agents"`
 	Why    string   `json:"why"`
-}
-
-func (w wake) wants(agent string) bool {
-	for _, a := range w.Agents {
-		if a == agent {
-			return true
-		}
-	}
-	return false
 }
 
 // decideWake works out who should answer one message.
@@ -125,12 +122,6 @@ func decideWake(text string, to []string, agents []string, reg *connector.Regist
 	return wake{Agents: append([]string(nil), agents...), Why: "open to the room"}
 }
 
-// chatter reports a message with nothing in it to act on.
-//
-// Deliberately narrow: a few words, no question, and nothing anyone claimed.
-// Anything longer is treated as substance and still reaches the room, because
-// staying quiet on a real question is a worse failure than answering a short
-// one.
 // acks are messages that acknowledge rather than say anything. A closed list
 // rather than a length rule, because length does not separate them: "ship it"
 // and "on it" are both two words and only one of them is worth seven model
@@ -148,6 +139,8 @@ var acks = map[string]bool{
 	"got": true, "it": true, "on": true, "same": true, "sure": true,
 }
 
+// chatter reports a message that acknowledges rather than says anything. A
+// question is never chatter, however short.
 func chatter(text string) bool {
 	if strings.Contains(text, "?") {
 		return false

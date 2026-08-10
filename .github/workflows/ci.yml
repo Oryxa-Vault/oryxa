@@ -52,6 +52,11 @@ jobs:
       - name: test
         run: go test -race -count=1 ./...
 
+      # Dead code is not a style problem here: an unused function is usually the
+      # remains of a design that changed, still readable as if it were current.
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...
+
       # The core must never branch on which framework it is talking to.
       #
       # Comments are exempt on purpose: several of them name a framework to
