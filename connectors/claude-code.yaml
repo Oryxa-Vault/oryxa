@@ -37,9 +37,11 @@ turn:
   path: /v1/agents/claude-code/turn
   body:
     handle: "{{handle}}"
-    # Pinned only, not the whole room. A coding agent's turn is expensive and
-    # its context window is already carrying a repository.
-    input: "{{context.pinned}}\n\n{{input}}"
+    # The whole room, not just the pinned set. What the other agent found is the
+    # reason to be in a room at all, and an append list is bounded where it is
+    # rendered rather than where it is stored — so this grows to a limit and then
+    # stops, and `-summariser` decides whether what fell off is said or counted.
+    input: "{{context}}\n\n{{input}}"
   response:
     format: ndjson
     # Checked before the `when` gate, so this catches a failure on any line —
@@ -48,3 +50,18 @@ turn:
     when: $.type == assistant
     text:
       - $.message.content[*].text
+
+# What this agent leaves behind for the rest of the room.
+#
+# `result` rather than `$text`: the CLI ends every turn with one event carrying
+# the finished answer, where $text is everything it said along the way —
+# including the "I'll check the README" it says before checking the README.
+# A named field cannot drift the way the running transcript can.
+#
+# Not pinned. Pinning is the curated set that goes in front of every agent on
+# every turn, and a coding agent's answer is long enough that pinning each one
+# would crowd out whatever was actually worth keeping.
+context:
+  - key: findings
+    from: $.result
+    when: $.type == result

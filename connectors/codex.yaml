@@ -43,10 +43,20 @@ turn:
   path: /v1/agents/codex/turn
   body:
     handle: "{{handle}}"
-    input: "{{context.pinned}}\n\n{{input}}"
+    # The whole room. What the other agent found is the reason to be in one.
+    input: "{{context}}\n\n{{input}}"
   response:
     format: ndjson
     error: $.error
     when: $.item.type == agent_message
     text:
       - $.item.text
+
+# Codex contributes to the same list Claude Code does, so the room accumulates
+# findings rather than one agent's findings. Two rules on one key across two
+# connectors is fine: append entries cannot conflict, which is why append is the
+# default kind.
+context:
+  - key: findings
+    from: $.item.text
+    when: $.item.type == agent_message
