@@ -27,6 +27,30 @@ type Server struct {
 	token              string
 	trustHeader        string
 	allowPrivateAgents bool
+
+	// Turn budgets. Nil means unlimited; see limit.go for why the keys are the
+	// room and the server rather than the caller.
+	roomTurns *limiter
+	allTurns  *limiter
+
+	// Guards changes to the agent registry. Empty leaves them to any token
+	// holder, which is what they were before.
+	adminToken string
+}
+
+// WithAdminToken requires a second credential to register or remove an agent.
+// Empty leaves the registry open to any token holder.
+func (s *Server) WithAdminToken(t string) *Server {
+	s.adminToken = t
+	return s
+}
+
+// WithTurnLimits bounds turns per minute, per room and across the server.
+// Either at zero or below is unlimited.
+func (s *Server) WithTurnLimits(perRoom, total int) *Server {
+	s.roomTurns = newLimiter(perRoom)
+	s.allTurns = newLimiter(total)
+	return s
 }
 
 func New(reg *connector.Registry, exec *connector.Executor, mgr *session.Manager, log events.Store) *Server {
@@ -90,7 +114,7 @@ func (s *Server) Routes() http.Handler {
 	// the room secret says which rooms are yours. Ordering them this way means an
 	// unauthenticated caller never reaches the room check, so the room check can
 	// never become an oracle for which rooms exist.
-	return logging(s.requireAuth(s.requireRoom(mux)))
+	return logging(s.requireAuth(s.requireAdmin(s.requireRoom(mux))))
 }
 
 // ---- agents ----
@@ -164,6 +188,28 @@ func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if _, ok := s.reg.Get(name); !ok {
+		writeErr(w, 404, fmt.Errorf("agent not found"))
+		return
+	}
+
+	// Removing an agent an open room holds leaves that room with a lane that can
+	// never run a turn, and nothing in the room says why. There is no recovery
+	// but registering it again, so this asks first — and names the rooms, which
+	// is the thing the caller needs in order to decide.
+	//
+	// ?force=true for when that is the point: an agent pointing somewhere it
+	// should not be is worth breaking a room over.
+	if rooms := s.mgr.UsedBy(name); len(rooms) > 0 && r.URL.Query().Get("force") != "true" {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": fmt.Sprintf(
+				"%q is in %d open room(s); removing it leaves them unable to run a turn. "+
+					"Close them first, or repeat with ?force=true", name, len(rooms)),
+			"sessions": rooms,
+		})
+		return
+	}
+
 	if !s.reg.Delete(name) {
 		writeErr(w, 404, fmt.Errorf("agent not found"))
 		return
@@ -271,11 +317,23 @@ func (s *Server) submitInput(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, fmt.Errorf("missing %s; this request did not come through the trusted proxy", s.trustHeader))
 		return
 	}
-	in, err := s.mgr.Submit(r.PathValue("id"), who.Author, req.Text, req.To...)
+	id := r.PathValue("id")
+	// Checked before the message is accepted, charged after — the cost is the
+	// number of agents it wakes, and the wake ladder does not decide that until
+	// the message is in.
+	if !s.admit(w, id) {
+		return
+	}
+
+	in, err := s.mgr.Submit(id, who.Author, req.Text, req.To...)
 	if err != nil {
 		writeErr(w, statusFor(err), err)
 		return
 	}
+	// A message that woke nobody is free, which is the wake ladder's whole
+	// point made budgetary: "thanks" costs nothing and a question for seven
+	// agents costs seven.
+	s.charge(id, len(in.Wake))
 	// Submitting no longer creates turns — who answers, and when, is each lane's
 	// business. The response is shaped like the old one anyway: `state` and
 	// `group` are what clients branch on, and one input is still one group. The

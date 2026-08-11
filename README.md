@@ -344,6 +344,22 @@ Unset, authors stay self-declared, and the startup banner says so:
 All three default to off so the two-minute quickstart stays two minutes. None
 should be off anywhere else.
 
+**Turns are bounded** — 30 a minute per room and 120 across the server by
+default, `0` for unlimited. A turn is an agent doing work, so this is the budget
+that costs money rather than a request counter: one message can wake seven
+agents and cost seven, or wake nobody and cost nothing. The wake ladder shows up
+in the bill.
+
+```bash
+oryxa serve -room-turns-per-min 30 -turns-per-min 120
+```
+
+**`-admin-token`** guards adding and removing agents, sent as `X-Oryxa-Admin`.
+Reading the registry and `check` stay open, so the viewer keeps working. And
+removing an agent an open room holds is refused with the rooms named — it would
+leave them with a lane that can never run a turn — unless you mean it:
+`?force=true`.
+
 **Agents registered over the API may only reach public addresses.** `base` is a
 URL this server fetches, so without a line there, `POST /v1/agents` reads any
 internal service — and on a cloud host, the metadata endpoint holding its

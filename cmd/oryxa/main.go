@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -155,6 +156,9 @@ Serve flags
   -token TOKEN          require this token            (ORYXA_TOKEN)
   -trust-header HEADER  identity from your proxy      (ORYXA_TRUST_HEADER)
   -summariser AGENT     roll long context lists up     (ORYXA_SUMMARISER)
+  -admin-token TOKEN    required to add or remove an agent (ORYXA_ADMIN_TOKEN)
+  -room-turns-per-min N turns one room may start        (default 30, 0 = off)
+  -turns-per-min N      turns across the server         (default 120, 0 = off)
   -allow-private-agents API-registered agents may reach private addresses
   -reset                erase the log on start        (ORYXA_RESET) — development
 
@@ -180,6 +184,14 @@ func serve(args []string, openWindow bool) {
 	summariser := fs.String("summariser", os.Getenv("ORYXA_SUMMARISER"),
 		"connector that summarises a shared-context list once it outgrows a prompt "+
 			"(ORYXA_SUMMARISER); unset, a long room keeps a count-only marker")
+	adminToken := fs.String("admin-token", os.Getenv("ORYXA_ADMIN_TOKEN"),
+		"require this token to register or remove an agent (ORYXA_ADMIN_TOKEN). Unset, "+
+			"any token holder can, including deleting one that live rooms depend on")
+	roomTurns := fs.Int("room-turns-per-min", envInt("ORYXA_ROOM_TURNS_PER_MIN", 30),
+		"turns per minute one room may start; 0 for unlimited. A turn is an agent doing "+
+			"work, so this is the budget that costs money")
+	allTurns := fs.Int("turns-per-min", envInt("ORYXA_TURNS_PER_MIN", 120),
+		"turns per minute across the whole server; 0 for unlimited")
 	allowPrivate := fs.Bool("allow-private-agents", os.Getenv("ORYXA_ALLOW_PRIVATE_AGENTS") != "",
 		"let agents registered over the API point at loopback and private addresses "+
 			"(ORYXA_ALLOW_PRIVATE_AGENTS). Off by default: that endpoint is reachable by "+
@@ -241,7 +253,9 @@ func serve(args []string, openWindow bool) {
 	srv := api.New(reg, exec, mgr, log).
 		WithToken(*token).
 		WithTrustedHeader(*trustHeader).
-		WithPrivateAgents(*allowPrivate)
+		WithPrivateAgents(*allowPrivate).
+		WithAdminToken(*adminToken).
+		WithTurnLimits(*roomTurns, *allTurns)
 
 	httpSrv := &http.Server{
 		Addr:              *addr,
@@ -273,6 +287,19 @@ func serve(args []string, openWindow bool) {
 		fmt.Printf("  ├─ identity    self-declared — the log records claims, not people\n")
 	} else {
 		fmt.Printf("  ├─ identity    from %s (bind privately; this header is spoofable)\n", *trustHeader)
+	}
+	// A turn is an agent doing work, and behind a command-line connector that is
+	// minutes of one — so this line is a spend limit, and worth reading as one.
+	if *roomTurns <= 0 && *allTurns <= 0 {
+		fmt.Printf("  ├─ turns       unlimited — nothing bounds what a caller can spend\n")
+	} else {
+		fmt.Printf("  ├─ turns       %s per room, %s total, per minute\n",
+			limitWord(*roomTurns), limitWord(*allTurns))
+	}
+	if *adminToken == "" {
+		fmt.Printf("  ├─ registry    open — any token holder can add or remove an agent\n")
+	} else {
+		fmt.Printf("  ├─ registry    admin token required to add or remove an agent\n")
 	}
 	if *allowPrivate {
 		// Said every time, like -reset. It re-opens a hole on exactly the
@@ -549,4 +576,23 @@ func openBrowser(url string) {
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "could not open a browser (%v) — open %s manually\n", err, url)
 	}
+}
+
+// envInt reads an integer from the environment, falling back to def. A value
+// that is not a number falls back too rather than failing to start: a typo in an
+// .env should not take a server down, and the banner prints what took effect.
+func envInt(key string, def int) int {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func limitWord(n int) string {
+	if n <= 0 {
+		return "unlimited"
+	}
+	return strconv.Itoa(n)
 }

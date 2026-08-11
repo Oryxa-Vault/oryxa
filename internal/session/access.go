@@ -95,6 +95,35 @@ func (m *Manager) Unscoped() []string {
 	return out
 }
 
+// UsedBy returns the open sessions that have this agent in them, sorted.
+//
+// Exists because removing an agent is not a local act: a room holding one has a
+// lane for it, and taking the connector away leaves that lane unable to run a
+// turn for as long as the room lives. Closed rooms are excluded — they are
+// history, and history is allowed to name an agent that no longer exists.
+func (m *Manager) UsedBy(agent string) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []string
+	for id, s := range m.sessions {
+		s.mu.Lock()
+		closed := s.state == StateClosed
+		agents := append([]string(nil), s.agents...)
+		s.mu.Unlock()
+		if closed {
+			continue
+		}
+		for _, a := range agents {
+			if a == agent {
+				out = append(out, id)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Participants returns everyone who has spoken in a session, sorted.
 //
 // Derived from the same set the wake ladder already keeps: a name belongs to a
