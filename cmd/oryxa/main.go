@@ -441,7 +441,16 @@ func check(args []string) {
 	if res.Turn != nil {
 		d := fmt.Sprintf("%dms · %d parts · %d chars", res.Turn.Ms, res.Turn.Parts, res.Turn.TextLen)
 		if !res.Turn.OK {
-			d = res.Turn.Error
+			// The agent's own words when it has any, and only then what went
+			// wrong reaching it. A turn that failed because the agent said so
+			// has no transport error to report, and an empty line here would
+			// be the least useful moment to print nothing.
+			switch {
+			case len(res.Turn.Errors) > 0:
+				d = strings.Join(res.Turn.Errors, "; ")
+			default:
+				d = res.Turn.Error
+			}
 		}
 		line("turn", mark(res.Turn.OK), d)
 		if res.Turn.Sample != "" {

@@ -16,6 +16,26 @@ disclaimer; it's a specific, known gap:
 Run it on a laptop, behind a VPN, or behind an authenticating proxy you operate.
 Don't put it on the public internet yet.
 
+### If you run `oryxa-shim`
+
+The shim starts processes, which makes it the most sensitive thing in this
+repository. Three properties hold it together, and all three are deliberate:
+
+- **What may run comes only from a local file.** Nothing in a request names a
+  command, and `GET /v1/agents` does not serve the command lines back. This is
+  why exec is not a connector field: connectors are registrable over HTTP at
+  `POST /v1/agents`, so a spec that could name a command would make that endpoint
+  remote code execution behind one shared token.
+- **It binds to loopback by default** and says so loudly at startup when it does
+  not. `-token` guards it, and should be set whenever the port is shared.
+- **The shipped tool allowlist is read-only.** An allowlist is a stronger
+  boundary than a permission mode because it cannot be prompted around. Widening
+  it means anyone who can reach the room can change files on that machine —
+  which, without read scoping, means anyone holding the token.
+
+Treat the shim's host as the trust boundary: it has the credentials and the
+repository, and a room member's message is the input that drives it.
+
 When read scoping lands, this section changes and the release notes will say so.
 
 ## Reporting a vulnerability

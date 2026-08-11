@@ -12,6 +12,62 @@ import (
 
 func warnText(res *CheckResult) string { return strings.Join(res.Warnings, " | ") }
 
+// An agent that says it failed must not be reported as a healthy turn.
+//
+// Found against a real command-line agent whose credentials had expired: the
+// turn came back carrying nothing but an authentication error, and `check`
+// called it ok and warned that no text selector matched — sending someone to
+// debug a selector that was working perfectly. It matched nothing because there
+// was nothing to match.
+func TestCheckFailsWhenTheAgentReportsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"type":"assistant","error":"authentication_failed"}`)
+	}))
+	defer srv.Close()
+
+	spec := &Spec{
+		Name: "sad", Base: srv.URL,
+		Turn: &Step{Method: "POST", Path: "/run",
+			Response: &Response{Format: "json", Error: "$.error", Text: []string{"$.message"}}},
+	}
+	res := NewExecutor().Check(context.Background(), spec, "hi")
+
+	if res.OK || res.Turn.OK {
+		t.Errorf("a turn carrying only an error was reported as ok")
+	}
+	if !strings.Contains(res.Error, "authentication_failed") {
+		t.Errorf("the agent's own words did not reach the result: %q", res.Error)
+	}
+	if strings.Contains(warnText(res), "no text selector matched") {
+		t.Errorf("blamed the selector for an error the agent reported: %v", res.Warnings)
+	}
+}
+
+// An error alongside an answer is a partial answer, not a failed turn: several
+// protocols report a recoverable problem mid-stream and carry on.
+func TestCheckWarnsWhenAnErrorAccompaniesAnAnswer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprint(w, `{"error":"one tool timed out"}`+"\n")
+		fmt.Fprint(w, `{"message":"here is the answer anyway"}`+"\n")
+	}))
+	defer srv.Close()
+
+	spec := &Spec{
+		Name: "partial", Base: srv.URL,
+		Turn: &Step{Method: "POST", Path: "/run",
+			Response: &Response{Format: "ndjson", Error: "$.error", Text: []string{"$.message"}}},
+	}
+	res := NewExecutor().Check(context.Background(), spec, "hi")
+
+	if !res.Turn.OK {
+		t.Errorf("a turn that answered was failed for a recoverable error")
+	}
+	if !strings.Contains(warnText(res), "one tool timed out") {
+		t.Errorf("the error was swallowed: %v", res.Warnings)
+	}
+}
+
 // Both cases below are the real failures seen against Google ADK driving a
 // reasoning model. Each one passed `check` with a green turn while the answer
 // was wrong, which is exactly the class these heuristics exist to catch.

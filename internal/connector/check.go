@@ -37,6 +37,11 @@ type TurnResult struct {
 	TextLen int    `json:"text_len"`
 	Sample  string `json:"sample,omitempty"`
 	Error   string `json:"error,omitempty"`
+
+	// Errors is what the agent said about itself, via response.error. Kept
+	// apart from Error, which is what went wrong reaching it: "the agent
+	// refused" and "the agent is unreachable" send you to different places.
+	Errors []string `json:"errors,omitempty"`
 }
 
 // Check runs a real probe turn. Nothing here is simulated — a check that passes
@@ -80,6 +85,7 @@ func (e *Executor) Check(ctx context.Context, spec *Spec, probe string) *CheckRe
 	var sample strings.Builder
 	var full strings.Builder
 	var raws []json.RawMessage
+	var said []string
 
 	start := time.Now()
 	err := e.Turn(ctx, spec, tc, func(p Part) {
@@ -87,11 +93,18 @@ func (e *Executor) Check(ctx context.Context, spec *Spec, probe string) *CheckRe
 		if len(p.Raw) > 0 {
 			raws = append(raws, p.Raw)
 		}
-		if p.Kind == "text" {
+		switch p.Kind {
+		case "text":
 			textLen += len(p.Text)
 			full.WriteString(p.Text)
 			if sample.Len() < 200 {
 				sample.WriteString(p.Text)
+			}
+		case "error":
+			// What the agent said about itself, which is worth more than
+			// anything inferred from the shape of the response.
+			if s := strings.TrimSpace(p.Text); s != "" {
+				said = append(said, s)
 			}
 		}
 	})
@@ -109,6 +122,24 @@ func (e *Executor) Check(ctx context.Context, spec *Spec, probe string) *CheckRe
 		return res
 	}
 	res.Turn = tr
+
+	// An agent that reported an error and said nothing else has failed, and the
+	// check has to say so. Reporting "ok, but no text selector matched" sends
+	// someone to debug a selector that is working perfectly — it matched
+	// nothing because there was nothing to match.
+	if len(said) > 0 {
+		tr.Errors = said
+		if textLen == 0 {
+			tr.OK = false
+			res.Error = "agent reported an error: " + said[0]
+			return res
+		}
+		// Text as well as an error is a partial answer, not a failed turn —
+		// several protocols report a recoverable problem mid-stream and carry
+		// on. Worth surfacing, not worth failing on.
+		res.Warnings = append(res.Warnings,
+			"agent reported an error alongside its answer: "+said[0])
+	}
 
 	if parts == 0 {
 		res.Warnings = append(res.Warnings, "agent returned no parts")

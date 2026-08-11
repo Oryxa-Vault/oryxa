@@ -164,6 +164,84 @@ response:
 
 `check` warns you when it sees this, so you rarely have to spot it yourself.
 
+### 6. Your agent is a command, not a server
+
+Coding agents — Claude Code, Codex, and the rest — have no HTTP surface. They
+read stdin and write JSON lines to stdout. `oryxa-shim` puts a server in front
+of one, and then it is an ordinary connector reading an ordinary NDJSON stream.
+
+```bash
+oryxa-shim -agents shim.yaml     # runs on 127.0.0.1:8090
+oryxa check claude-code
+```
+
+The command line lives in `shim.yaml`, never in the connector:
+
+```yaml
+agents:
+  - name: claude-code
+    dir: .
+    session: generate            # we name the id; `capture` reads it back instead
+    first:  [claude, -p, --output-format, stream-json, --verbose,
+             --tools, "Read,Grep,Glob", --session-id, "{{handle}}"]
+    resume: [claude, -p, --output-format, stream-json, --verbose,
+             --tools, "Read,Grep,Glob", --resume, "{{handle}}"]
+```
+
+`first` and `resume` are complete command lines, not a base plus extras —
+resuming is a flag on one CLI and a subcommand on another. A command with no
+`{{input}}` gets the prompt on stdin, which is where a long one belongs: argument
+lists have a length limit and a room's shared context can reach it.
+
+**Why this is a separate process, and not a field in the connector.** Oryxa
+registers connectors over HTTP at `POST /v1/agents`, so a spec is something a
+caller supplies at runtime. A spec that could name a command to run would make
+that endpoint remote code execution behind one shared token. Keeping exec out
+here means the only thing deciding what may run is a file on the machine.
+
+Everything the command writes to stdout arrives untouched when it is JSON, so
+the connector is written against the CLI's own events:
+
+```yaml
+turn:
+  method: POST
+  path: /v1/agents/claude-code/turn
+  body:
+    handle: "{{handle}}"
+    input: "{{context.pinned}}\n\n{{input}}"
+  response:
+    format: ndjson
+    error: $.error
+    when: $.type == assistant
+    text:
+      - $.message.content[*].text
+```
+
+Non-JSON output and everything on stderr is wrapped in an envelope
+(`{"type":"oryxa.shim","stream":"stderr","text":…}`) rather than passed through
+raw. Raw, it would reach the executor's "show the user something" fallback and a
+stray warning would arrive in the room as the agent's answer. Wrapped, it lands
+as opaque activity — which is what makes a failing turn readable instead of
+simply empty.
+
+For a CLI with no JSON mode at all, read the wrapper instead:
+
+```yaml
+response:
+  format: ndjson
+  when: $.stream == stdout
+  text:
+    - $.text
+```
+
+**Two things to decide before you widen the tool list.** Anyone who can reach
+the room can make this agent act, so the shipped default is a read-only
+allowlist — with no Edit, Write or Bash, no wording gets a file changed, which
+is a stronger boundary than a permission mode because it cannot be prompted
+around. And a turn here is a whole agentic loop rather than one model call, so
+[who answers](#who-answers) stops being an optimisation and starts being the
+difference between usable and not.
+
 ---
 
 ## Reference
