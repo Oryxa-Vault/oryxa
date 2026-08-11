@@ -27,7 +27,12 @@ type Executor struct {
 }
 
 func NewExecutor() *Executor {
-	return &Executor{Client: &http.Client{}}
+	// The guard lives in the dialer rather than in Validate because the
+	// destination is only known for certain at connect time — and it applies to
+	// redirects for free, which a check on `base` would not.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = guardedDial
+	return &Executor{Client: &http.Client{Transport: tr}}
 }
 
 // Open runs the optional open step and returns the captured handle, if any.
@@ -106,6 +111,10 @@ func (e *Executor) do(ctx context.Context, spec *Spec, step *Step, tc Ctx) (*htt
 	// A host and a container reach the same agent by different names, and
 	// keeping two near-identical files in sync is how they drift.
 	url := joinURL(tc.RenderString(spec.Base), tc.RenderString(step.Path))
+
+	// Carried on the context so it reaches the dialer, which is the only place
+	// that knows what the name actually resolved to.
+	ctx = withOrigin(ctx, spec.Source)
 
 	var bodyReader io.Reader
 	if step.Body != nil {

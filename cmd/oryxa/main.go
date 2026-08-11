@@ -155,6 +155,7 @@ Serve flags
   -token TOKEN          require this token            (ORYXA_TOKEN)
   -trust-header HEADER  identity from your proxy      (ORYXA_TRUST_HEADER)
   -summariser AGENT     roll long context lists up     (ORYXA_SUMMARISER)
+  -allow-private-agents API-registered agents may reach private addresses
   -reset                erase the log on start        (ORYXA_RESET) — development
 
 Run  oryxa <command> -h  for a command's own flags.
@@ -179,6 +180,11 @@ func serve(args []string, openWindow bool) {
 	summariser := fs.String("summariser", os.Getenv("ORYXA_SUMMARISER"),
 		"connector that summarises a shared-context list once it outgrows a prompt "+
 			"(ORYXA_SUMMARISER); unset, a long room keeps a count-only marker")
+	allowPrivate := fs.Bool("allow-private-agents", os.Getenv("ORYXA_ALLOW_PRIVATE_AGENTS") != "",
+		"let agents registered over the API point at loopback and private addresses "+
+			"(ORYXA_ALLOW_PRIVATE_AGENTS). Off by default: that endpoint is reachable by "+
+			"anyone with the token, and `base` is a URL this server then fetches. Connectors "+
+			"on disk are unaffected and may point anywhere")
 	reset := fs.Bool("reset", os.Getenv("ORYXA_RESET") != "",
 		"erase the log before starting (ORYXA_RESET); for development, where a "+
 			"durable log means each restart brings back every room you were done "+
@@ -216,7 +222,11 @@ func serve(args []string, openWindow bool) {
 	// After LoadDir: a registration made over the API is the more recent
 	// deliberate act, and the only one available to someone who cannot reach
 	// the filesystem.
-	stored, shadowed, err := api.RestoreAgents(log, reg)
+	restoredOrigin := connector.FromAPI
+	if *allowPrivate {
+		restoredOrigin = connector.FromFile
+	}
+	stored, shadowed, err := api.RestoreAgents(log, reg, restoredOrigin)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "restore agents: %v\n", err)
 		os.Exit(1)
@@ -230,7 +240,8 @@ func serve(args []string, openWindow bool) {
 
 	srv := api.New(reg, exec, mgr, log).
 		WithToken(*token).
-		WithTrustedHeader(*trustHeader)
+		WithTrustedHeader(*trustHeader).
+		WithPrivateAgents(*allowPrivate)
 
 	httpSrv := &http.Server{
 		Addr:              *addr,
@@ -262,6 +273,13 @@ func serve(args []string, openWindow bool) {
 		fmt.Printf("  ├─ identity    self-declared — the log records claims, not people\n")
 	} else {
 		fmt.Printf("  ├─ identity    from %s (bind privately; this header is spoofable)\n", *trustHeader)
+	}
+	if *allowPrivate {
+		// Said every time, like -reset. It re-opens a hole on exactly the
+		// deployment where it costs the most, and a flag left set in an .env is
+		// how it gets there.
+		fmt.Printf("  ├─ agents      API-registered agents may reach private addresses — " +
+			"on a cloud host that includes the metadata endpoint\n")
 	}
 	if stored > 0 {
 		fmt.Printf("  ├─ connectors  %d loaded from %s, %d restored from the log\n", n, *dir, stored)

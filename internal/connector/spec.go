@@ -45,6 +45,12 @@ type Spec struct {
 	// of parsing: it is the answer to "what does this agent leave behind for
 	// everyone else", which is the whole reason a room has shared state.
 	Context []ContextRule `yaml:"context" json:"context,omitempty"`
+
+	// Source is where this spec came from, and it decides where the spec is
+	// allowed to point. Never parsed and never serialised: it is the server's
+	// judgement about a request, so accepting it from the request itself would
+	// hand the decision to the thing being judged. See Origin.
+	Source Origin `yaml:"-" json:"-"`
 }
 
 // ContextRule extracts one piece of a finished turn into shared context.

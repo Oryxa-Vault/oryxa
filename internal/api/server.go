@@ -20,12 +20,13 @@ import (
 )
 
 type Server struct {
-	reg         *connector.Registry
-	exec        *connector.Executor
-	mgr         *session.Manager
-	log         events.Store
-	token       string
-	trustHeader string
+	reg                *connector.Registry
+	exec               *connector.Executor
+	mgr                *session.Manager
+	log                events.Store
+	token              string
+	trustHeader        string
+	allowPrivateAgents bool
 }
 
 func New(reg *connector.Registry, exec *connector.Executor, mgr *session.Manager, log events.Store) *Server {
@@ -105,6 +106,16 @@ func (s *Server) putAgent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err)
 		return
 	}
+	// These bytes came over the network from whoever holds the token, and `base`
+	// is a URL this server will then fetch on their behalf. Marking the origin
+	// here is what stops that being a request forgery primitive against
+	// anything the server can reach — internal services, and on a cloud
+	// instance the metadata endpoint that holds its credentials.
+	//
+	// Set after parsing and never read from the body: it is the server's
+	// judgement about a request, and taking it from the request would hand the
+	// decision to the thing being judged.
+	spec.Source = s.agentOrigin()
 	if err := s.reg.Put(spec); err != nil {
 		writeErr(w, 400, err)
 		return
@@ -112,6 +123,25 @@ func (s *Server) putAgent(w http.ResponseWriter, r *http.Request) {
 	who, _ := s.identify(r, "")
 	s.recordAgent(who.Author, spec)
 	writeJSON(w, 201, spec)
+}
+
+// agentOrigin is the trust level given to a spec that arrived over the API.
+//
+// Operators who deliberately register agents on a private network can put it
+// back to trusted, which is a decision worth making explicitly rather than a
+// default that quietly matters on a cloud instance.
+func (s *Server) agentOrigin() connector.Origin {
+	if s.allowPrivateAgents {
+		return connector.FromFile
+	}
+	return connector.FromAPI
+}
+
+// WithPrivateAgents lets API-registered agents point at loopback and private
+// addresses, as connectors on disk always may.
+func (s *Server) WithPrivateAgents(allow bool) *Server {
+	s.allowPrivateAgents = allow
+	return s
 }
 
 func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
