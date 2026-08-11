@@ -58,8 +58,24 @@ agents:
   # first message and then behaves as though every turn is its first, this
   # selector is the thing to check.
   #
-  # `-s read-only` is the sandbox, and it is the counterpart to the tool
-  # allowlist above: Codex may read the tree and may not write to it.
+  # `-s workspace-write` lets Codex write inside this directory, and this is the
+  # line to think about before copying this file.
+  #
+  # It is here because read-only made it a worse colleague than it needed to be:
+  # asked what was wrong with this repo it found a real crash — a send on a
+  # closed channel in the event fan-out — and had to report it as a suspicion,
+  # because `go test` could not create its build directory. Verification is most
+  # of what a coding agent is for, and it cannot verify anything it cannot run.
+  #
+  # What it costs: anyone who can reach a room holding this agent can cause writes
+  # to this directory. That is a bigger blast radius than the token was ever
+  # guarding, so it belongs on a checkout you can throw away rather than the one
+  # you are working in. `claude-code` above stays read-only deliberately — one
+  # agent that can run the tests and one that cannot is a useful pair, and it
+  # keeps the safer shape in front of anyone reading this file.
+  #
+  # Writes are confined to this directory and temp. Codex still could not reach
+  # a credential in $HOME even if asked to.
   #
   # The two command lines differ by more than a flag, which is the case that
   # made `first` and `resume` complete argv rather than a base plus extras.
@@ -75,7 +91,7 @@ agents:
       - exec
       - --json
       - -s
-      - read-only
+      - workspace-write
       - --skip-git-repo-check
       - "{{input}}"
     resume:
@@ -86,5 +102,5 @@ agents:
       - --json
       - --skip-git-repo-check
       - -c
-      - sandbox_mode=read-only
+      - sandbox_mode=workspace-write
       - "{{input}}"

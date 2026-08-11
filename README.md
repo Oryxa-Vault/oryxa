@@ -195,11 +195,21 @@ oryxa serve                       # same shell, same variable
 Set on only one side, the server starts, every agent looks healthy, and every
 turn fails with a 401 that names neither end.
 
-> **Read-only by default, and this is the line to think about before changing
-> it.** Anyone who can reach the room can make this agent act. An allowlist is a
-> stronger boundary than a permission mode because it cannot be prompted around:
-> with no `Edit`, `Write` or `Bash`, no wording gets a file changed. Widen it
-> once you have read scoping and trust everyone in the room — not before.
+> **The two shipped agents are deliberately asymmetric, and this is the line to
+> think about before copying them.** `claude-code` gets a read-only tool
+> allowlist — with no `Edit`, `Write` or `Bash`, no wording gets a file changed,
+> which is a stronger boundary than a permission mode because it cannot be
+> prompted around. `codex` gets `-s workspace-write` and **can write inside its
+> working directory**.
+>
+> One agent that can run the tests and one that cannot turns out to be a useful
+> pair: asked what was wrong with this repo, Codex found a real crash in the
+> event fan-out — and under read-only could only report it as a suspicion,
+> because `go test` could not create its build directory.
+>
+> The cost is that anyone who can reach that room can cause writes to that
+> directory. Point it at a checkout you can throw away. `-s read-only` puts it
+> back.
 
 Two things change once an agent in the room can read a repository. Cancelling a
 turn now has to reach a *process*, so the shim kills the whole group rather than
