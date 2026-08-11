@@ -56,6 +56,10 @@ turn:
     when: $.item.type == agent_message
     text:
       - $.item.text
+    # Codex sends whole messages, not token deltas — a preamble and then the
+    # answer, as two complete sentences. Concatenated with nothing they run
+    # together mid-sentence.
+    join: "\n\n"
 
 # Codex contributes to the same list Claude Code does, so the room accumulates
 # findings rather than one agent's findings. Two rules on one key across two
@@ -65,3 +69,6 @@ context:
   - key: findings
     from: $.item.text
     when: $.item.type == agent_message
+    # Only the conclusion. Codex opens a turn by saying what it is about to do,
+    # and without this that preamble is recorded as a finding beside the finding.
+    last: true

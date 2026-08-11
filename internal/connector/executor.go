@@ -90,6 +90,10 @@ func (e *Executor) Turn(ctx context.Context, spec *Spec, tc Ctx, emit func(Part)
 			format = rs.Format
 		}
 	}
+	// Applied here rather than in each consumer, so the manager, the terminal
+	// and the viewer all assemble the same answer without any of them knowing
+	// this setting exists.
+	emit = joining(rs, emit)
 
 	switch format {
 	case "sse":
@@ -259,6 +263,30 @@ func emitPayload(payload string, rs *Response, emit func(Part)) {
 	}
 	for _, t := range texts {
 		emit(Part{Kind: "text", Text: t, Raw: raw})
+	}
+}
+
+// joining puts response.join between text parts.
+//
+// The separator lands on the text of the second and later parts rather than
+// being emitted on its own: a part is one thing the agent produced, and an
+// extra part carrying only whitespace would show up in the raw view as
+// something the agent never sent. Raw is untouched either way — what the agent
+// sent stays exactly what it sent, and this only changes how the pieces read
+// once assembled.
+func joining(rs *Response, emit func(Part)) func(Part) {
+	if rs == nil || rs.Join == "" {
+		return emit
+	}
+	var spoken bool
+	return func(p Part) {
+		if p.Kind == "text" && p.Text != "" {
+			if spoken {
+				p.Text = rs.Join + p.Text
+			}
+			spoken = true
+		}
+		emit(p)
 	}
 }
 

@@ -151,6 +151,13 @@ func ruleValues(r connector.ContextRule, out string, chunks []json.RawMessage) [
 			}
 		}
 	}
+	// An agent that says several things in one turn says them in order, so what
+	// it concluded is the last of them. Kept behind a flag rather than made the
+	// default: a rule reading tool results or citations wants all of them, and
+	// which of those an agent is doing is the connector author's to know.
+	if r.Last && len(values) > 1 {
+		values = values[len(values)-1:]
+	}
 	return values
 }
 
