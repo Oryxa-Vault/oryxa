@@ -1,0 +1,50 @@
+# Claude Code, through oryxa-shim — verified against 2.1.208.
+#
+# A command-line agent rather than a framework server, which is the point: it
+# reaches Oryxa with no new spec feature, the same way AG-UI did. What made that
+# possible is that the shim passes the CLI's own NDJSON through untouched, so
+# this file is an ordinary connector reading an ordinary stream.
+#
+#   oryxa-shim -agents shim.yaml       # then: oryxa check claude-code
+#
+# The stream, in the order it arrives:
+#
+#   {"type":"system","subtype":"init","session_id":"…","tools":[…]}
+#   {"type":"assistant","message":{"content":[{"type":"text","text":"…"}]}}
+#   {"type":"result","subtype":"success","result":"…","total_cost_usd":…}
+#
+# `content[*].text` needs no predicate to skip thinking and tool_use blocks:
+# they carry no `text` key, so the selector simply does not match them. Tool
+# calls, results and the shim's own stderr lines all land as opaque activity.
+name: claude-code
+base: http://{{env.ORYXA_SHIM_HOST}}:8090
+timeout: 15m
+
+capabilities: [stream, multi_turn]
+
+interests: [repo, codebase, bug, stack trace, test, refactor, build, ci, regression]
+
+open:
+  method: POST
+  path: /v1/agents/claude-code/open
+  body:
+    conversation: "{{conversation}}"
+  capture:
+    handle: $.handle
+
+turn:
+  method: POST
+  path: /v1/agents/claude-code/turn
+  body:
+    handle: "{{handle}}"
+    # Pinned only, not the whole room. A coding agent's turn is expensive and
+    # its context window is already carrying a repository.
+    input: "{{context.pinned}}\n\n{{input}}"
+  response:
+    format: ndjson
+    # Checked before the `when` gate, so this catches a failure on any line —
+    # the CLI's own errors and the shim's alike.
+    error: $.error
+    when: $.type == assistant
+    text:
+      - $.message.content[*].text

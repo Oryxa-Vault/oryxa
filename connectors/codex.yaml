@@ -1,0 +1,48 @@
+# STARTING POINT — not yet verified against a running Codex CLI.
+#
+# Written from Codex's documented `exec --json` surface, through oryxa-shim.
+# The event shape has moved between releases, so expect to adjust `text` and the
+# `when` gate. Run it and read what comes back:
+#
+#   oryxa-shim -agents shim.yaml
+#   oryxa check codex
+#
+# `check` prints the first payload it saw, which is faster than reading release
+# notes. The three selectors below are tried in order and the first match wins,
+# so a wrong guess costs nothing as long as one of them is right.
+#
+# If the agent answers the first message and then behaves as though every turn
+# is its first, the `capture` selector in shim.yaml missed the session id —
+# that is the shim's setting, not this file's.
+name: codex
+base: http://{{env.ORYXA_SHIM_HOST}}:8090
+timeout: 15m
+
+capabilities: [stream, multi_turn]
+
+interests: [repo, codebase, bug, stack trace, test, refactor, build, ci, regression]
+
+open:
+  method: POST
+  path: /v1/agents/codex/open
+  body:
+    conversation: "{{conversation}}"
+  capture:
+    handle: $.handle
+
+turn:
+  method: POST
+  path: /v1/agents/codex/turn
+  body:
+    handle: "{{handle}}"
+    input: "{{context.pinned}}\n\n{{input}}"
+  response:
+    format: ndjson
+    error: $.error
+    # Reasoning and tool activity share the stream with the answer. Without a
+    # gate the room gets the model's scratchpad as though it were the reply.
+    when: $.msg.type == agent_message
+    text:
+      - $.msg.message
+      - $.item.text
+      - $.message

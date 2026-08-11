@@ -150,6 +150,25 @@ the server says so at startup.
 restart drains rather than manufacturing turns whose outcome is unknown.
 15MB scratch image.
 
+**Command-line agents.** `oryxa-shim` serves an agent that has no HTTP surface —
+a coding agent reading stdin and writing JSON lines — so it reaches Oryxa as an
+ordinary connector. It needed no spec change, which is the same result AG-UI
+gave and a stronger one: this is not another protocol, it is not a server at all.
+
+It is a separate process for one reason. Connectors are registrable over HTTP at
+`POST /v1/agents`, so a spec is something a caller supplies at runtime; a spec
+that could name a command would make that endpoint remote code execution behind
+one shared token. Exec lives in a file on the machine, and nothing about it is
+reachable from the network. The shipped tool allowlist is read-only for the
+matching reason — an allowlist cannot be prompted around, and a permission mode
+can.
+
+The design choice inside it: one process per turn, resumed by id, rather than
+one long-lived process per lane. A persistent process would save a second of
+startup and cost process supervision, leaked children on abandoned rooms, and a
+crashed turn poisoning the lane — real complexity against a saving that is noise
+next to a turn measured in minutes.
+
 ### Verified against real servers and a real model
 
 | Framework | Shape |
@@ -159,6 +178,7 @@ restart drains rather than manufacturing turns whose outcome is unknown.
 | Pydantic AI | FastAPI wrapper, SSE |
 | CrewAI | FastAPI wrapper, non-streaming, multi-agent inside one turn |
 | AG-UI | a protocol, not a framework — typed events, tool calls |
+| Claude Code | a command, not a server — NDJSON on stdout, resumed by session id |
 
 Also verified: token-level streaming, multi-turn continuity across several
 people, a tool-using agent (six tool calls in one turn, none leaking into the
@@ -170,7 +190,7 @@ answer), and one agent failing without taking the room down.
 
 | | |
 |---|---|
-| **Read scoping** | one token opens every session; there is no participant concept anywhere. This is what makes the framework laptop-safe rather than deployable, and it is now the largest gap. |
+| **Read scoping** | one token opens every session; there is no participant concept anywhere. This is what makes the framework laptop-safe rather than deployable, and it is now the largest gap. Command-line agents raised its stakes rather than its priority: the worst a room token used to buy was reading a transcript, and it can now buy a turn from an agent that reads a repository. The read-only tool allowlist is the stopgap, and it is a stopgap. |
 | **Mid-turn writes** | rules apply when a turn finishes. An agent that wants to publish a finding *while* still working would need a callback — `{{callback_url}}` exists in the template context but nothing populates it yet. |
 | **Presence** | who is here, who is typing. Now load-bearing rather than cosmetic: owner precedence in §7.4 is built on it. |
 | **Participants** | agents have no owners. Read scoping, owner-waking and directed output all wait on this one idea — see §7.2. |
@@ -227,6 +247,14 @@ Questions this project actually answered, rather than guessed:
   The broad claim was wrong; `planning_llm` fixes it.
 - **Should Oryxa own user identity?** No. It accepts identity, it does not
   establish it — the same line already drawn around orchestration and prompts.
+- **Does an agent with no HTTP surface need a spec change?** No. A shim that
+  serves the process and passes its own JSON through untouched was enough, and
+  the untouched part is what made it enough — rewriting an agent's events on the
+  way past is looking inside from a different direction.
+- **Should the shim hold a process open per lane, or run one per turn?** One per
+  turn. The saving is a second of startup against a turn measured in minutes;
+  the cost is process supervision, children leaked by abandoned rooms, and a
+  crash that poisons a lane rather than a turn.
 
 ---
 

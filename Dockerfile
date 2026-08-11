@@ -5,6 +5,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# Only the server. oryxa-shim is deliberately not here: it exists to start
+# processes, and the things it starts are a CLI, its credentials and a
+# repository — none of which are in a scratch image, and none of which should be
+# handed to a container to keep the image small. Run it on the host.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /oryxa ./cmd/oryxa
 
 FROM scratch

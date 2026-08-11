@@ -20,6 +20,10 @@
 !/connectors/adk.yaml
 !/connectors/pydanticai.yaml
 !/connectors/crewai.yaml
+# Both reach a shim on localhost and carry no credentials — what may actually
+# run lives in shim.yaml, which is the file to think about before sharing.
+!/connectors/claude-code.yaml
+!/connectors/codex.yaml
 # bee-agui.yaml stays local: it names a private internal service. The generic
 # AG-UI template covers the same protocol for everyone else.
 
@@ -36,3 +40,6 @@ docker-compose.override.yml
 .idea/
 .vscode/
 *.swp
+
+# Local demo rig: connector sets and the switcher for recordings.
+/demo/

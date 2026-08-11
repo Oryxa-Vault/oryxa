@@ -200,8 +200,16 @@ func methodOr(step *connector.Step) string {
 }
 
 // defaultAgentHost keeps a plain run working with no environment at all.
+//
+// The shim gets the same treatment and a separate name, because the two move
+// apart as soon as anything is containerised: a server in Docker reaches
+// frameworks on the host, but the shim starts processes and so tends to stay
+// wherever the repository and the credentials already are.
 func defaultAgentHost() {
 	if os.Getenv("ORYXA_AGENT_HOST") == "" {
 		os.Setenv("ORYXA_AGENT_HOST", "localhost")
+	}
+	if os.Getenv("ORYXA_SHIM_HOST") == "" {
+		os.Setenv("ORYXA_SHIM_HOST", "localhost")
 	}
 }

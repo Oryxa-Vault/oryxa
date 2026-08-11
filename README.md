@@ -135,8 +135,9 @@ continuity across several people.
 | [pydanticai.yaml](connectors/pydanticai.yaml) | Pydantic AI | hand-rolled FastAPI, SSE — the generic-http path |
 | [crewai.yaml](connectors/crewai.yaml) | CrewAI | hand-rolled FastAPI, no streaming, multi-agent inside |
 | [bee-agui.yaml](connectors/bee-agui.yaml) | AG-UI (any) | typed event protocol — tool calls, reasoning, state deltas |
+| [claude-code.yaml](connectors/claude-code.yaml) | Claude Code | a **command**, not a server — NDJSON over stdout |
 
-Five genuinely different surfaces, one core, one YAML file each.
+Six genuinely different surfaces, one core, one YAML file each.
 `connectors/templates/` has starting points including plain HTTP.
 
 CrewAI is the sharpest test of the boundary: a crew is multi-agent by design, so
@@ -149,6 +150,56 @@ that made eight tool calls in one turn (`work_manager.plan`, `load_skill`,
 `write_artifact`, …). Every `TOOL_CALL_START` / `ARGS` / `END` / `RESULT` and
 every `STATE_DELTA` landed as opaque `activity` — none of it reached the answer,
 and no new spec feature was needed for any of it.
+
+### Command-line agents
+
+Claude Code and Codex have no HTTP surface at all: they read stdin and write
+JSON lines. [`oryxa-shim`](cmd/oryxa-shim) puts a server in front of one, and
+then it is an ordinary connector reading an ordinary NDJSON stream — no new spec
+feature, same as AG-UI.
+
+```bash
+oryxa-shim -agents shim.yaml     # 127.0.0.1:8090
+oryxa check claude-code
+```
+
+The command line lives in [`shim.yaml`](shim.yaml), never in the connector, and
+**that separation is the point**. Oryxa registers connectors over HTTP at
+`POST /v1/agents`, so a spec is something a caller supplies at runtime. A spec
+that could name a command to run would turn that endpoint into remote code
+execution behind one shared token. The shim is a separate process so the only
+thing deciding what may run is a file on the machine.
+
+```yaml
+agents:
+  - name: claude-code
+    dir: .
+    session: generate      # we name the id; `capture` reads it back instead
+    first:  [claude, -p, --output-format, stream-json, --verbose,
+             --tools, "Read,Grep,Glob", --session-id, "{{handle}}"]
+    resume: [claude, -p, --output-format, stream-json, --verbose,
+             --tools, "Read,Grep,Glob", --resume, "{{handle}}"]
+```
+
+> **Read-only by default, and this is the line to think about before changing
+> it.** Anyone who can reach the room can make this agent act. An allowlist is a
+> stronger boundary than a permission mode because it cannot be prompted around:
+> with no `Edit`, `Write` or `Bash`, no wording gets a file changed. Widen it
+> once you have read scoping and trust everyone in the room — not before.
+
+Two things change once an agent in the room can read a repository. Cancelling a
+turn now has to reach a *process*, so the shim kills the whole group rather than
+the one command — a coding agent spawns builds and test runners, and killing
+only the parent leaves those burning CPU on a turn nobody is waiting for. And a
+turn is a whole agentic loop rather than one model call, which is what makes
+**who answers** stop being an optimisation: 133 model calls versus 35 is a nice
+saving when a call is cheap and a different product when it is a three-minute
+coding turn.
+
+`codex.yaml` ships as a starting point rather than a verified connector — the
+shape is written from Codex's documented `exec --json` surface and has not been
+run against the CLI. `oryxa check codex` prints the first payload it sees, which
+is the fastest way to fix the selectors.
 
 ---
 
@@ -163,6 +214,7 @@ go install ./cmd/oryxa      # or: go build -o oryxa ./cmd/oryxa
 ```
 oryxa serve                 run the API and viewer
 oryxa launch window         run and open the viewer in a browser
+oryxa-shim -agents FILE     serve command-line agents over HTTP
 ```
 
 **Connectors** — read files, so they work before anything is running
@@ -428,12 +480,14 @@ couple us to its release cycle.
 
 ```
 cmd/oryxa/          server
+cmd/oryxa-shim/     HTTP in front of agents that only speak stdin and stdout
 cmd/mockagent/      stand-in agent for testing
 internal/connector/ spec, templating, selectors, HTTP executor, check
 internal/session/   the room: membership, queue, turn loop
 internal/events/    append-only log
 internal/api/       HTTP surface
 connectors/         connector files, loaded at startup
+shim.yaml           what the shim may run — never settable over HTTP
 ```
 
 ```bash

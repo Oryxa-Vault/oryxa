@@ -63,11 +63,16 @@ jobs:
       # explain why a feature exists (ADK's thought flag, AG-UI's typed events),
       # and that reasoning is worth keeping. Tests are exempt because their
       # fixtures replay real payloads. What must stay clean is executable code.
+      #
+      # The command-line agents are in the list for the same reason as the
+      # frameworks, and it binds oryxa-shim too: the shim is a way to run a
+      # command, not an adapter for a particular CLI. The day it needs a special
+      # case for one of these, the config format is wrong.
       - name: no framework names in core code
         run: |
           fail=0
           for f in $(find internal cmd -name '*.go' ! -name '*_test.go'); do
-            hits=$(sed -e 's://.*::' "$f" | grep -inE "langgraph|crewai|pydantic|ag-ui|\badk\b" || true)
+            hits=$(sed -e 's://.*::' "$f" | grep -inE "langgraph|crewai|pydantic|ag-ui|\badk\b|claude|codex" || true)
             if [ -n "$hits" ]; then
               echo "$hits" | sed "s|^|$f:|"
               fail=1
