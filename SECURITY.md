@@ -116,10 +116,21 @@ repository. Three properties hold it together, and all three are deliberate:
   token.** Not a warning — reaching this port is enough to run what is in the
   config file, and a line printed at startup is read once, by someone who has
   already decided to run the command.
-- **The shipped tool allowlist is read-only.** An allowlist is a stronger
-  boundary than a permission mode because it cannot be prompted around. Widening
-  it means anyone who can reach the room can change files on that machine —
-  which, without read scoping, means anyone holding the token.
+- **The two shipped agents are deliberately asymmetric.** `claude-code` runs
+  with a read-only tool allowlist — a stronger boundary than a permission mode,
+  because it cannot be prompted around. `codex` runs with `-s workspace-write`
+  and **can write inside its working directory**.
+
+  The asymmetry is the point: one agent that can run the tests and one that
+  cannot. Read-only made Codex a worse colleague than it needed to be — asked
+  what was wrong with this repo it found a real crash in the event fan-out and
+  could only report it as a suspicion, because `go test` could not create its
+  build directory. Verifying is most of what a coding agent is for.
+
+  What it costs: anyone who can reach a room holding `codex` can cause writes to
+  that directory. Point it at a checkout you can throw away, not the one you are
+  working in. Writes stay confined to that directory and temp — it cannot reach a
+  credential in `$HOME` even if asked to — and `-s read-only` puts it back.
 
 Treat the shim's host as the trust boundary: it has the credentials and the
 repository, and a room member's message is the input that drives it.
