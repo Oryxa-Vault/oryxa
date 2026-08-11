@@ -33,6 +33,31 @@ func newOryxa(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// roomSecrets remembers what each room's create call handed back, so the tests
+// read the same as they did before scoping existed. The alternative — threading
+// a secret through every call site — would test the plumbing rather than the
+// behaviour each test is actually about.
+var roomSecrets sync.Map // session id -> secret
+
+// withRoom adds the secret for whichever room a request is aimed at.
+func withRoom(req *http.Request) *http.Request {
+	if id := roomIDFromPath(req.URL.Path); id != "" {
+		if v, ok := roomSecrets.Load(id); ok {
+			req.Header.Set(SessionHeader, v.(string))
+		}
+	}
+	return req
+}
+
+// getRoom is http.Get carrying the room secret.
+func getRoom(rawurl string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", rawurl, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(withRoom(req))
+}
+
 func do(t *testing.T, method, url string, body any) (int, map[string]any) {
 	t.Helper()
 	var r *bytes.Reader
@@ -47,13 +72,20 @@ func do(t *testing.T, method, url string, body any) (int, map[string]any) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(withRoom(req))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	var out map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&out)
+	// A create response is the only one that carries a secret; catch it here so
+	// every later call to that room is admitted automatically.
+	if id, _ := out["id"].(string); id != "" {
+		if sec, _ := out["secret"].(string); sec != "" {
+			roomSecrets.Store(id, sec)
+		}
+	}
 	return resp.StatusCode, out
 }
 
@@ -316,7 +348,7 @@ func TestStreamBackfillsThenFollows(t *testing.T) {
 	waitTurn(t, ory.URL, sid, tr["id"].(string))
 
 	// Join late, from the very beginning.
-	resp, err := http.Get(ory.URL + "/v1/sessions/" + sid + "/stream?since=0")
+	resp, err := getRoom(ory.URL + "/v1/sessions/" + sid + "/stream?since=0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +358,7 @@ func TestStreamBackfillsThenFollows(t *testing.T) {
 	// onmessage for events with no `event:` field, so naming them would break
 	// every browser client silently.
 	t.Run("no named event field", func(t *testing.T) {
-		r, err := http.Get(ory.URL + "/v1/sessions/" + sid + "/stream?since=0")
+		r, err := getRoom(ory.URL + "/v1/sessions/" + sid + "/stream?since=0")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -775,7 +807,7 @@ func TestSharedContextOverHTTP(t *testing.T) {
 			strings.NewReader(`{"value":"postgres, WAL on","author":"bob"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("If-Match", fmt.Sprint(v))
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(withRoom(req))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -789,7 +821,7 @@ func TestSharedContextOverHTTP(t *testing.T) {
 			strings.NewReader(`{"value":"use sqlite","author":"carol"}`))
 		req2.Header.Set("Content-Type", "application/json")
 		req2.Header.Set("If-Match", fmt.Sprint(v))
-		resp2, err := http.DefaultClient.Do(req2)
+		resp2, err := http.DefaultClient.Do(withRoom(req2))
 		if err != nil {
 			t.Fatal(err)
 		}

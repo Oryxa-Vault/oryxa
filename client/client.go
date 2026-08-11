@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,15 @@ type Client struct {
 	base  string
 	token string
 	http  *http.Client
+
+	// Room secrets, by session id. Opening a room records its secret and every
+	// later call to that room carries it, so scoping costs the caller nothing in
+	// the common case — you opened it, so you are in it.
+	//
+	// Held in memory only. A secret that outlives the process would have to be
+	// written somewhere, and this package has no business choosing where.
+	mu      sync.RWMutex
+	secrets map[string]string
 }
 
 // Option configures a Client.
@@ -41,10 +51,17 @@ func WithToken(t string) Option { return func(c *Client) { c.token = t } }
 // Streaming ignores its timeout: a stream stays open for the life of a room.
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
 
+// WithRoom records a room's secret, for joining a room somebody else opened.
+// The secret is shown once, when the room is created.
+func WithRoom(id, secret string) Option {
+	return func(c *Client) { c.secrets[id] = secret }
+}
+
 func New(baseURL string, opts ...Option) *Client {
 	c := &Client{
-		base: strings.TrimRight(baseURL, "/"),
-		http: &http.Client{Timeout: 60 * time.Second},
+		base:    strings.TrimRight(baseURL, "/"),
+		http:    &http.Client{Timeout: 60 * time.Second},
+		secrets: map[string]string{},
 	}
 	for _, o := range opts {
 		o(c)
@@ -100,6 +117,10 @@ type Session struct {
 	State   string            `json:"state"`
 	Handles map[string]string `json:"handles,omitempty"`
 	Created time.Time         `json:"created"`
+
+	// Secret is set only by Open, and only once — it is what admits you to this
+	// room. Keep it if anyone else needs in; the server cannot reissue it.
+	Secret string `json:"secret,omitempty"`
 }
 
 type SessionView struct {
@@ -249,8 +270,47 @@ func (c *Client) Check(ctx context.Context, name, probe string) (*CheckResult, e
 
 func (c *Client) Open(ctx context.Context, agents ...string) (*Session, error) {
 	var out Session
-	return &out, c.do(ctx, "POST", "/v1/sessions",
-		map[string]any{"agents": agents}, &out)
+	if err := c.do(ctx, "POST", "/v1/sessions",
+		map[string]any{"agents": agents}, &out); err != nil {
+		return nil, err
+	}
+	// Remembered so the caller never has to thread it through by hand: you
+	// opened this room, so every later call to it carries the secret.
+	c.Join(out.ID, out.Secret)
+	return &out, nil
+}
+
+// Join records a room's secret, for a room somebody else opened. It is a local
+// act — nothing is sent — because the secret is the whole credential and the
+// server has no list of members to add you to.
+func (c *Client) Join(id, secret string) {
+	if id == "" || secret == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.secrets[id] = secret
+}
+
+// roomSecret returns the secret for a room, if this client holds one.
+func (c *Client) roomSecret(id string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.secrets[id]
+}
+
+// roomIDFromPath pulls a session id out of /v1/sessions/{id}/... so every call
+// carries its own room's secret without each method having to remember to.
+func roomIDFromPath(path string) string {
+	const prefix = "/v1/sessions/"
+	if !strings.HasPrefix(path, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		return rest[:i]
+	}
+	return rest
 }
 
 func (c *Client) Sessions(ctx context.Context) ([]Session, error) {
@@ -347,6 +407,11 @@ func (c *Client) Stream(ctx context.Context, id string, since int64, fn func(Eve
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	// A Go client can send a header, so it needs no cookie dance — that exists
+	// for the viewer, where EventSource cannot.
+	if secret := c.roomSecret(id); secret != "" {
+		req.Header.Set("X-Oryxa-Session", secret)
+	}
 	// No timeout: a stream stays open for as long as the room does.
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
@@ -410,6 +475,11 @@ func (c *Client) request(ctx context.Context, method, path string, headers map[s
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if id := roomIDFromPath(path); id != "" {
+		if secret := c.roomSecret(id); secret != "" {
+			req.Header.Set("X-Oryxa-Session", secret)
+		}
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)

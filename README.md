@@ -11,9 +11,9 @@ where someone left off. That's the job.
 Status: **v0.3** — connectors, rooms, shared context agents can read and write,
 an event log everything is a fold over, live stream, viewer.
 
-> **Run it locally, not on the open internet.** One token currently opens every
-> session and there is no participant concept, so anyone with the token can read
-> any room. Read scoping is the next thing being built — see
+> **Run it locally, not on the open internet.** Rooms are scoped now — each
+> carries a secret and one token no longer opens all of them — but identity is
+> still self-declared without a proxy, and nothing rate-limits a turn. See
 > [SECURITY.md](SECURITY.md).
 
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -296,6 +296,24 @@ Without it the log is in-memory and the server says so at startup.
 A turn that was *running* when the process died is marked interrupted rather than
 re-run: the agent may well have finished it, and doing the work twice is worse
 than saying the outcome is unknown. Turns that were only queued are re-queued.
+
+**Rooms carry their own secret.** Creating one returns it, once:
+
+```bash
+oryxa open claude-code codex
+#   s_9a2d0e49
+#   secret  72177eac70…
+#   someone else joins with: oryxa tail s_9a2d0e49 -secret 72177eac70…
+```
+
+The API token says you may talk to this server; the room secret says which rooms
+are yours. Send it as `X-Oryxa-Session`, or let the CLI remember it — rooms
+opened on this machine are written to `~/.config/oryxa/rooms.json` with mode
+0600, so `send` and `tail` find it without being told.
+
+Only a hash is kept, so it cannot be reissued and a stolen backup carries no
+keys. A wrong secret and a room that does not exist answer identically, because
+telling them apart would say which rooms are real.
 
 **`-token`** guards the API. Send it as `Authorization: Bearer <token>`, or sign
 in through the viewer — which exchanges it for an HttpOnly cookie, because

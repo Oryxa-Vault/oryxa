@@ -51,6 +51,14 @@ func (c *client) do(method, path string, body, out any) error {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	// The token says you may talk to this server; the room secret says which
+	// rooms are yours. Looked up per request from the path, so no command has to
+	// thread it through by hand.
+	if id := roomIDFromPath(path); id != "" {
+		if s := roomSecret(id, flagSecret); s != "" {
+			req.Header.Set("X-Oryxa-Session", s)
+		}
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -86,6 +94,11 @@ func (c *client) stream(path string, fn func(json.RawMessage) bool) error {
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if id := roomIDFromPath(path); id != "" {
+		if s := roomSecret(id, flagSecret); s != "" {
+			req.Header.Set("X-Oryxa-Session", s)
+		}
 	}
 	// No timeout: a stream stays open for the life of a session.
 	resp, err := (&http.Client{}).Do(req)

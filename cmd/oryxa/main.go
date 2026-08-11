@@ -298,6 +298,17 @@ func serve(args []string, openWindow bool) {
 	if recovered > 0 {
 		fmt.Printf("     recovered %d session(s) from the log\n\n", recovered)
 	}
+	// Rooms created before rooms had secrets cannot be opened by anyone, because
+	// there is no secret to present and inventing one would be handing out access
+	// nobody was ever granted. Named here rather than discovered one confused
+	// user at a time.
+	if old := mgr.Unscoped(); len(old) > 0 {
+		fmt.Printf("     %d session(s) predate room secrets and can no longer be opened:\n", len(old))
+		for _, id := range old {
+			fmt.Printf("       %s\n", id)
+		}
+		fmt.Printf("     their history is still in the log and readable with -db directly.\n\n")
+	}
 	for _, s := range reg.List() {
 		fmt.Printf("     • %-14s %s\n", s.Name,
 			connector.Ctx{Vars: s.Vars}.RenderString(s.Base))

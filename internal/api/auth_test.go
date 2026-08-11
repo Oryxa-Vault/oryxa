@@ -113,7 +113,7 @@ func TestLoginCookieAuthenticatesStreams(t *testing.T) {
 
 	req, _ := http.NewRequest("GET", srv.URL+"/v1/sessions", nil)
 	req.AddCookie(cookie)
-	got, err := http.DefaultClient.Do(req)
+	got, err := http.DefaultClient.Do(withRoom(req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestTrustedHeaderOverridesClaimedAuthor(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Forwarded-User", "alice@example.com")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(withRoom(req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestAuthStatusReportsTrustedIdentity(t *testing.T) {
 	srv := trusted(t, "X-Forwarded-User")
 	req, _ := http.NewRequest("GET", srv.URL+"/v1/auth/status", nil)
 	req.Header.Set("X-Forwarded-User", "bob@example.com")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(withRoom(req))
 	if err != nil {
 		t.Fatal(err)
 	}

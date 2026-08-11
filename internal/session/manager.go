@@ -72,6 +72,10 @@ type session struct {
 	agents  []string
 	created time.Time
 
+	// The hash of the secret that opens this room. See access.go — the plaintext
+	// is returned once, at creation, and never stored anywhere.
+	secretHash string
+
 	mu    sync.Mutex
 	state State
 
@@ -170,9 +174,13 @@ func NewManager(reg *connector.Registry, exec *connector.Executor, log events.St
 
 // Create opens a room. More than one agent may be present; which of them
 // answers any given message is decided when that message lands.
-func (m *Manager) Create(agents ...string) (Summary, error) {
+//
+// It returns the room's secret, and this is the only time that secret exists in
+// readable form. Whoever holds it can reach the room and nobody else can,
+// including other holders of the API token.
+func (m *Manager) Create(agents ...string) (Summary, string, error) {
 	if len(agents) == 0 {
-		return Summary{}, fmt.Errorf("%w: none given", ErrNoAgent)
+		return Summary{}, "", fmt.Errorf("%w: none given", ErrNoAgent)
 	}
 	seen := map[string]bool{}
 	var list []string
@@ -181,20 +189,22 @@ func (m *Manager) Create(agents ...string) (Summary, error) {
 			continue
 		}
 		if _, ok := m.reg.Get(a); !ok {
-			return Summary{}, fmt.Errorf("%w: %s", ErrNoAgent, a)
+			return Summary{}, "", fmt.Errorf("%w: %s", ErrNoAgent, a)
 		}
 		seen[a] = true
 		list = append(list, a)
 	}
 
+	secret, hash := newSecret()
 	s := &session{
-		id:      "s_" + randHex(8),
-		agents:  list,
-		created: time.Now().UTC(),
-		state:   StateIdle,
-		lanes:   map[string]*lane{},
-		ctx:     sharedctx.New(),
-		closed:  make(chan struct{}),
+		id:         "s_" + randHex(8),
+		agents:     list,
+		created:    time.Now().UTC(),
+		state:      StateIdle,
+		lanes:      map[string]*lane{},
+		ctx:        sharedctx.New(),
+		closed:     make(chan struct{}),
+		secretHash: hash,
 	}
 	for _, a := range list {
 		s.lanes[a] = newLane(a)
@@ -203,11 +213,15 @@ func (m *Manager) Create(agents ...string) (Summary, error) {
 	m.sessions[s.id] = s
 	m.mu.Unlock()
 
+	// Only the hash goes to the log. A room's own members can read its events,
+	// so the plaintext there would mean anyone who ever had access keeps it
+	// after the secret is rotated — and a database backup would carry every key
+	// in the building.
 	m.emit(s.id, "session.created", "", "", map[string]any{
-		"agent": list[0], "agents": list,
+		"agent": list[0], "agents": list, "secret_sha256": hash,
 	})
 	m.startLanes(s)
-	return s.summary(), nil
+	return s.summary(), secret, nil
 }
 
 // emit writes to the log. Appends are best-effort at the call site but never
@@ -753,6 +767,7 @@ func rebuild(id string, evs []events.Event) *session {
 			Kind   string   `json:"kind"`
 			Key    string   `json:"key"`
 			Value  string   `json:"value"`
+			Secret string   `json:"secret_sha256"`
 		}
 		if len(ev.Data) > 0 {
 			_ = json.Unmarshal(ev.Data, &d)
@@ -761,6 +776,11 @@ func rebuild(id string, evs []events.Event) *session {
 		switch ev.Kind {
 		case "session.created":
 			s.created = ev.TS
+			// Rooms created before scoping carry no hash. Left empty, and
+			// Authorize refuses them rather than guessing — see Unscoped, which
+			// names them at startup so an upgrade does not turn into a
+			// disappearing room nobody can explain.
+			s.secretHash = d.Secret
 			if len(d.Agents) > 0 {
 				s.agents = d.Agents
 			} else if d.Agent != "" {
