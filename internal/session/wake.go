@@ -137,6 +137,34 @@ var acks = map[string]bool{
 	"hi": true, "hey": true, "hello": true, "morning": true, "afternoon": true,
 	"everyone": true, "all": true, "folks": true, "team": true,
 	"got": true, "it": true, "on": true, "same": true, "sure": true,
+
+	// Politeness runs longer than one word, and every word has to be in this map
+	// for a message to count. "thanks" was here and "thanks, both of you" was not,
+	// which is not a near miss: it is the common form. Measured against two
+	// command-line agents, that one message cost 20.3 seconds of agent time to
+	// say you are welcome.
+	"both": true, "you": true, "of": true, "guys": true, "much": true,
+	"lot": true, "a": true, "very": true, "so": true, "too": true,
+	"man": true, "mate": true, "welcome": true, "please": true, "pls": true,
+	"for": true, "me": true, "us": true, "my": true, "your": true,
+
+	// The doc comment above this ladder has always given "sounds good" as the
+	// example of what nobody should answer, and neither word was in the list.
+	"sounds": true, "good": true, "makes": true, "sense": true, "works": true,
+	"fine": true, "done": true, "awesome": true, "brilliant": true,
+	"excellent": true, "lovely": true, "super": true,
+	"we": true, "i": true, "that": true, "this": true,
+}
+
+// fragments are what is left of a contraction once the apostrophe is split on.
+//
+// "you're welcome" becomes you / re / welcome, and "re" then decides the message
+// is worth a model call from every agent in the room. A tail that only ever
+// appears inside a word means nothing on its own, so it is not evidence of
+// anything either way. Kept separate from acks because these are not
+// acknowledgements — they are debris from tokenising.
+var fragments = map[string]bool{
+	"s": true, "re": true, "m": true, "ll": true, "ve": true, "d": true, "t": true,
 }
 
 // chatter reports a message that acknowledges rather than says anything. A
@@ -152,7 +180,7 @@ func chatter(text string) bool {
 		return true
 	}
 	for _, f := range fields {
-		if !acks[f] {
+		if !acks[f] && !fragments[f] {
 			return false
 		}
 	}

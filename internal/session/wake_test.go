@@ -153,6 +153,51 @@ func TestChatterWakesNobody(t *testing.T) {
 	}
 }
 
+// Politeness is longer than one word, and every word has to be in the list for
+// a message to count as chatter. Each of these woke the whole room.
+//
+// "thanks, both of you" is the one that was measured: against two command-line
+// agents it cost 20.3 seconds of agent time to say you are welcome. And
+// "sounds good" is the example this ladder's own documentation has always given
+// for what nobody should answer, while neither word was in the list.
+func TestPolitenessIsStillChatter(t *testing.T) {
+	reg, agents := room7(t)
+	for _, text := range []string{
+		"thanks, both of you",
+		"thanks a lot",
+		"thank you very much",
+		"thanks guys",
+		"sounds good",
+		"makes sense",
+		"works for me",
+		"ok cool, thanks",
+		"perfect, thank you",
+		"you're welcome",
+	} {
+		if w := decideWake(text, nil, agents, reg, nil); len(w.Agents) != 0 {
+			t.Errorf("%q woke %s (why: %s)", text, who(w), w.Why)
+		}
+	}
+}
+
+// The list grew, so the guard against it swallowing real messages matters more
+// than it did. Each of these shares words with the ack list and is not chatter.
+func TestTheWiderListStillLetsRealMessagesThrough(t *testing.T) {
+	reg, agents := room7(t)
+	for _, text := range []string{
+		"good catch, but the migration is still wrong",
+		"that works only for postgres",
+		"a lot of the tests are flaky",
+		"you both missed the race",
+		"done with the spike, moving on",
+		"please cancel the deploy",
+	} {
+		if w := decideWake(text, nil, agents, reg, nil); len(w.Agents) == 0 {
+			t.Errorf("%q was swallowed as chatter", text)
+		}
+	}
+}
+
 // Staying quiet on a real question is worse than answering a short one, so the
 // rule is narrow: a question is never chatter, and neither is a real sentence.
 func TestShortQuestionsAndRealSentencesStillReachTheRoom(t *testing.T) {

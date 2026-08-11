@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -327,13 +328,46 @@ func streamEvents(c *client, sid string, since int64, raw, untilIdle bool) {
 // printer renders a stream. It keeps the little state needed to read well:
 // one input fans out to a turn per agent, so the question is printed once per
 // group rather than once per agent.
+//
+// The other piece of state is who is currently speaking, and that one exists
+// because lanes run in parallel. Announcing an agent when its turn starts reads
+// correctly only if turns take it in turns, which is exactly what this project
+// went out of its way not to do: two agents starting together printed both
+// headers back to back and then concatenated both answers into one paragraph.
+//
+// So the header is printed when an agent first says something, and again
+// whenever the speaker changes. A single agent is unaffected — one header, one
+// continuous stream, still live. Several agents read as blocks, attributed,
+// in the order the room actually heard them.
 type printer struct {
 	raw    bool
+	w      io.Writer
 	groups map[string]bool
+
+	speaking string          // whose text is mid-line right now
+	spoke    map[string]bool // agents that have said something this turn
 }
 
 func newPrinter(raw bool) *printer {
-	return &printer{raw: raw, groups: map[string]bool{}}
+	return &printer{raw: raw, w: os.Stdout, groups: map[string]bool{}, spoke: map[string]bool{}}
+}
+
+// say prints text as coming from actor, opening a new block if the speaker
+// changed since the last thing printed.
+func (p *printer) say(actor, text string) {
+	if p.speaking != actor {
+		p.endLine()
+		fmt.Fprintf(p.w, "  %s ‹ ", actor)
+		p.speaking = actor
+	}
+	fmt.Fprint(p.w, text) // no newline: deltas concatenate into one answer
+}
+
+func (p *printer) endLine() {
+	if p.speaking != "" {
+		fmt.Fprintln(p.w)
+		p.speaking = ""
+	}
 }
 
 func (p *printer) print(ev event) {
@@ -354,9 +388,11 @@ func (p *printer) print(ev event) {
 	switch ev.Kind {
 	case "output.part":
 		if d.Kind == "text" {
-			fmt.Print(d.Text) // no newline: deltas concatenate into one answer
+			p.spoke[ev.Actor] = true
+			p.say(ev.Actor, d.Text)
 		} else if raw {
-			fmt.Printf("\n  · %s %s", ev.Actor, strings.TrimSpace(string(ev.Data)))
+			p.endLine()
+			fmt.Fprintf(p.w, "  · %s %s\n", ev.Actor, strings.TrimSpace(string(ev.Data)))
 		}
 	case "input.submitted":
 		if d.Group != "" {
@@ -365,22 +401,60 @@ func (p *printer) print(ev event) {
 			}
 			p.groups[d.Group] = true
 		}
-		fmt.Printf("\n  %s › %s\n", ev.Actor, d.Text)
+		p.endLine()
+		fmt.Fprintf(p.w, "\n  %s › %s\n", ev.Actor, d.Text)
 	case "turn.started":
-		fmt.Printf("  %s ‹ ", d.Agent)
+		// Nothing printed here. An agent is announced by speaking.
+		delete(p.spoke, d.Agent)
 	case "turn.finished":
-		fmt.Println()
+		if p.speaking == ev.Actor {
+			p.endLine()
+		}
+		delete(p.spoke, ev.Actor)
+
+	// A turn that worked and said nothing. The server already worked out which
+	// half it came from and put the selectors on the event, so the terminal
+	// says what the viewer says rather than inventing a thinner version of it —
+	// a silent agent is the failure people blame the framework for.
+	//
+	// Decoded separately because `text` is a string on every other event and a
+	// list of selectors on this one. Sharing a struct means the whole decode
+	// fails on the type mismatch and every field silently reads as empty.
+	case "turn.empty":
+		var e struct {
+			Reason string   `json:"reason"`
+			Text   []string `json:"text"`
+			When   string   `json:"when"`
+		}
+		_ = json.Unmarshal(ev.Data, &e)
+		p.endLine()
+		fmt.Fprintf(p.w, "  %s ‹ finished without saying anything — %s\n", ev.Actor, e.Reason)
+		var sel []string
+		if len(e.Text) > 0 {
+			sel = append(sel, "text: "+strings.Join(e.Text, " | "))
+		}
+		if e.When != "" {
+			sel = append(sel, "when: "+e.When)
+		}
+		if len(sel) > 0 {
+			fmt.Fprintf(p.w, "      [%s]\n", strings.Join(sel, "  "))
+		}
 	case "turn.failed":
-		fmt.Printf("\n  %s failed: %s\n", ev.Actor, d.Error)
+		p.endLine()
+		fmt.Fprintf(p.w, "  %s failed: %s\n", ev.Actor, d.Error)
 	case "context.appended":
-		fmt.Printf("\n  · %s appended to %s\n", ev.Actor, d.Key)
+		p.endLine()
+		fmt.Fprintf(p.w, "  · %s appended to %s\n", ev.Actor, d.Key)
 	case "context.set":
-		fmt.Printf("\n  · %s set %s = %s\n", ev.Actor, d.Key, d.Value)
+		p.endLine()
+		fmt.Fprintf(p.w, "  · %s set %s = %s\n", ev.Actor, d.Key, d.Value)
 	case "conflict.rejected":
-		fmt.Printf("\n  · conflict on %s (rejected)\n", d.Key)
+		p.endLine()
+		fmt.Fprintf(p.w, "  · conflict on %s (rejected)\n", d.Key)
 	default:
 		if raw {
-			fmt.Printf("\n  · seq=%d %s %s\n", ev.Seq, ev.Kind, ev.Actor)
+			p.endLine()
+			fmt.Fprintf(p.w, "  · seq=%d %s %s\n", ev.Seq, ev.Kind, ev.Actor)
 		}
 	}
 }
