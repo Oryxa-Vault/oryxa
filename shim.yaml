@@ -51,22 +51,32 @@ agents:
       - --resume
       - "{{handle}}"
 
-  # Codex — STARTING POINT, not verified against a running CLI.
+  # Codex — verified against codex-cli 0.147.0.
   #
-  # Written from Codex's documented `exec` surface. Codex mints its own session
-  # id and reports it, so this is `session: capture` rather than generate — and
-  # `capture` is the first selector to check if resuming silently starts over.
+  # Codex mints its own id and announces it as `thread_id` on the first event,
+  # so this is `session: capture` rather than generate. If Codex answers the
+  # first message and then behaves as though every turn is its first, this
+  # selector is the thing to check.
   #
-  # Run `oryxa check codex` and read the sample it returns before trusting this.
+  # `-s read-only` is the sandbox, and it is the counterpart to the tool
+  # allowlist above: Codex may read the tree and may not write to it.
+  #
+  # The two command lines differ by more than a flag, which is the case that
+  # made `first` and `resume` complete argv rather than a base plus extras.
+  # `resume` is a subcommand that takes the id as a positional, and it rejects
+  # `-s` outright — the sandbox has to arrive as a config override instead.
   - name: codex
     dir: .
     timeout: 15m
     session: capture
-    capture: $.session_id
+    capture: $.thread_id
     first:
       - codex
       - exec
       - --json
+      - -s
+      - read-only
+      - --skip-git-repo-check
       - "{{input}}"
     resume:
       - codex
@@ -74,4 +84,7 @@ agents:
       - resume
       - "{{handle}}"
       - --json
+      - --skip-git-repo-check
+      - -c
+      - sandbox_mode=read-only
       - "{{input}}"

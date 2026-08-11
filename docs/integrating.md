@@ -188,10 +188,15 @@ agents:
              --tools, "Read,Grep,Glob", --resume, "{{handle}}"]
 ```
 
-`first` and `resume` are complete command lines, not a base plus extras —
-resuming is a flag on one CLI and a subcommand on another. A command with no
-`{{input}}` gets the prompt on stdin, which is where a long one belongs: argument
-lists have a length limit and a room's shared context can reach it.
+`first` and `resume` are complete command lines, not a base plus extras. That is
+the second agent's doing: Claude Code accepts a session id you name and resumes
+with a flag, while Codex mints its own id, resumes through a subcommand, and
+rejects on `resume` the sandbox flag its own `exec` requires. Anything clever
+enough to append flags to a shared base breaks there.
+
+A command with no `{{input}}` gets the prompt on stdin, which is where a long one
+belongs: argument lists have a length limit and a room's shared context can reach
+it.
 
 **Why this is a separate process, and not a field in the connector.** Oryxa
 registers connectors over HTTP at `POST /v1/agents`, so a spec is something a
