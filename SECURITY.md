@@ -5,13 +5,42 @@
 **Oryxa is not ready to be exposed to a network you don't control.** This isn't a
 disclaimer; it's a specific, known gap:
 
-- **One token opens every session.** There is no participant concept anywhere in
-  the codebase. Anyone holding the token can read any room, including rooms they
-  were never part of. Read scoping is the largest open item in
-  [PLAN.md](PLAN.md).
 - **Identity comes from the edge.** Oryxa trusts an author header supplied by a
   proxy in front of it (`ORYXA_TRUST_HEADER`). Without that proxy, callers assert
-  their own identity.
+  their own identity. Names in the log are claims, and anything that reads them —
+  who spoke, who a message was for — is only as good as that source.
+- **No rate limiting.** A token holder can start unbounded turns. With a
+  command-line agent behind a connector, that is unbounded spend.
+- **The agent registry is not scoped.** Anyone with the token can register or
+  delete an agent, and deleting one that rooms depend on is a denial of service.
+
+### Read scoping — built
+
+One token no longer opens every room. Each session carries a secret, issued once
+when it is created and required on every request that reads or writes it: the
+API token says you may talk to this server, and the session secret says which
+rooms are yours.
+
+It is a capability rather than a list of names, and that is deliberate. Oryxa has
+no accounts and is not going to grow any — it accepts identity, it does not
+establish it. Scoping on author names would be scoping on a string the caller
+picks, which looks exactly like access control and stops nobody. A secret works
+the same whether identity comes from a proxy or from a text box.
+
+- Only a SHA-256 hash is stored, and only the hash reaches the event log — so a
+  secret survives neither a database backup nor a room member reading its own
+  history.
+- A wrong secret and a room that does not exist give the identical 404. Any
+  difference between them is an oracle for which rooms exist.
+- The secret appears exactly once, in the create response. There is no way to
+  ask for it again, which is the property that makes holding it mean anything.
+- `POST /v1/sessions/{id}/join` exchanges it for an HttpOnly cookie scoped by
+  path to that one room, because `EventSource` cannot send a header and the live
+  stream needs authenticating too.
+
+Sessions created before this landed have no secret and can no longer be opened;
+the server names them at startup rather than leaving you to find out. Their
+history is still in the log.
 
 ### Where a registered agent may point
 

@@ -18,7 +18,7 @@ func TestConcurrentSetAtSameVersionAdmitsOne(t *testing.T) {
 	reg := connector.NewRegistry()
 	reg.Put(&connector.Spec{Name: "a", Base: "http://127.0.0.1:1", Turn: &connector.Step{}})
 	m := NewManager(reg, connector.NewExecutor(), events.NewMemory())
-	sum, err := m.Create("a")
+	sum, _, err := m.Create("a")
 	if err != nil {
 		t.Fatal(err)
 	}

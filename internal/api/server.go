@@ -63,6 +63,7 @@ func (s *Server) Routes() http.Handler {
 	// Sessions
 	mux.HandleFunc("POST /v1/sessions", s.createSession)
 	mux.HandleFunc("GET /v1/sessions", s.listSessions)
+	mux.HandleFunc("POST /v1/sessions/{id}/join", s.joinRoom)
 	mux.HandleFunc("GET /v1/sessions/{id}", s.getSession)
 	mux.HandleFunc("POST /v1/sessions/{id}/input", s.submitInput)
 	mux.HandleFunc("DELETE /v1/sessions/{id}/input/{tid}", s.withdrawInput)
@@ -85,7 +86,11 @@ func (s *Server) Routes() http.Handler {
 	// Viewer, embedded in the binary so there is nothing extra to deploy.
 	mux.Handle("/", web.Handler())
 
-	return logging(s.requireAuth(mux))
+	// Outermost first: the token says you may talk to this server at all, then
+	// the room secret says which rooms are yours. Ordering them this way means an
+	// unauthenticated caller never reaches the room check, so the room check can
+	// never become an oracle for which rooms exist.
+	return logging(s.requireAuth(s.requireRoom(mux)))
 }
 
 // ---- agents ----
@@ -209,12 +214,29 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	if req.Agent != "" {
 		agents = append([]string{req.Agent}, agents...)
 	}
-	sess, err := s.mgr.Create(agents...)
+	sess, secret, err := s.mgr.Create(agents...)
 	if err != nil {
 		writeErr(w, 400, err)
 		return
 	}
-	writeJSON(w, 201, sess)
+
+	// The one and only time the secret is readable. It is stored nowhere in
+	// plaintext, so a caller that loses it has lost the room — which is the
+	// property that makes holding it mean anything.
+	//
+	// Also set as a cookie, because the viewer that just created this room needs
+	// it on the stream and EventSource cannot send a header.
+	http.SetCookie(w, roomCookie(r, sess.ID, secret))
+	writeJSON(w, 201, sessionCreated{Summary: sess, Secret: secret})
+}
+
+// sessionCreated is the create response, and the only shape that ever carries a
+// secret. Kept apart from Summary deliberately: Summary is also what the list
+// returns, and a field that is usually empty is a field that leaks on the day
+// somebody forgets why it was empty.
+type sessionCreated struct {
+	session.Summary
+	Secret string `json:"secret"`
 }
 
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {

@@ -154,6 +154,20 @@ link-local by the time it is fetched — and it covers redirects and `check` for
 free. The connection goes to the address that was checked rather than to the
 name, so the second lookup a rebinding attack needs never happens.
 
+**Read scoping.** A session carries a secret, issued once at creation and
+required on every request that reads or writes it. The API token says you may
+talk to this server; the room secret says which rooms are yours.
+
+A capability rather than a participant list, and that is the whole argument.
+Oryxa accepts identity and does not establish it, so a name is a string the
+caller picks — scoping on one would look exactly like access control and stop
+nobody. A secret works the same whether identity comes from a proxy or a text box.
+
+Only the hash is stored and only the hash reaches the log. A wrong secret and a
+missing room answer identically, because any difference is an oracle for which
+rooms exist. The check sits in middleware ahead of routing, so a route added
+later is guarded by default rather than by remembering.
+
 **Auth.** One shared token, constant-time compared. `Authorization: Bearer` for
 clients; the viewer exchanges it for an HttpOnly cookie because `EventSource`
 cannot set headers and the stream needs authenticating too. Off by default, and
@@ -211,15 +225,26 @@ answer), and one agent failing without taking the room down.
 
 | | |
 |---|---|
-| **Read scoping** | one token opens every session; there is no participant concept anywhere. This is what makes the framework laptop-safe rather than deployable, and it is now the largest gap. Command-line agents raised its stakes rather than its priority: the worst a room token used to buy was reading a transcript, and it can now buy a turn from an agent that reads a repository. The read-only tool allowlist is the stopgap, and it is a stopgap. |
+| **Participants** | agents have no owners, and the room's idea of who is in it is still "everyone who has spoken". Owner-waking and directed output wait on this — see §7.2. Read scoping no longer does; it went the other way, on a capability. |
+| **Rate limiting** | nothing bounds how many turns a caller can start. With a command-line agent behind a connector that is unbounded spend, not merely unbounded load. |
+| **Agent registry authz** | anyone with the token can register or delete an agent. Deleting one that live rooms depend on is a denial of service with no recovery but re-registering it. |
 | **Mid-turn writes** | rules apply when a turn finishes. An agent that wants to publish a finding *while* still working would need a callback — `{{callback_url}}` exists in the template context but nothing populates it yet. |
 | **Presence** | who is here, who is typing. Now load-bearing rather than cosmetic: owner precedence in §7.4 is built on it. |
 | **Participants** | agents have no owners. Read scoping, owner-waking and directed output all wait on this one idea — see §7.2. |
 | **Hash chaining** | events are ordered and attributed but not tamper-evident. Chaining each event to its predecessor's hash would make the log verifiable rather than merely durable — worth having before anyone treats it as an audit record. |
 | **Usage accounting** | `turn.started` records what the *room* cost a prompt in characters, which is a different thing from what the *model* charged. No event carries token counts, so cost per turn cannot be derived from the log. |
 
-Read scoping is the one that blocks real use. Participants is the one the most
-other things wait on — see §7.
+Rate limiting is now the one that blocks real use, and command-line agents are
+why: a token holder starting unbounded turns used to be unbounded load and is now
+unbounded spend. Participants is still the one the most other things wait on —
+see §7.
+
+Read scoping came off this list by going around it. §7's order had participants
+first *because* scoping waited on them; it turned out scoping did not want them.
+A capability is unforgeable and a name is not, and Oryxa deliberately never
+establishes identity — so scoping on names would have been scoping on a string
+the caller picks. Participants stay worth building for owner-waking and directed
+output, which do need to know who owns what.
 
 One hole worth naming in what did ship: the room learns a name belongs to a
 person by hearing that person speak, so someone addressed before they have said

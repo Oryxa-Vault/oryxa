@@ -123,7 +123,7 @@
   @keyframes pulse { 50% { opacity:.25; } }
   .lanes .note { color:var(--faint); font-size:11px; margin-left:2px; }
 
-  .transcript { flex:1; overflow-y:auto; padding:18px 20px; }
+  .transcript { flex:1; min-height:120px; overflow-y:auto; padding:18px 20px; }
   .msg { margin-bottom:14px; max-width:min(760px,92%); }
   .who { font-size:11px; margin-bottom:3px; letter-spacing:.04em; }
   .msg.user .who { color:var(--user); }
@@ -138,21 +138,7 @@
   .msg.agent .bubble { border-left:2px solid var(--accent); }
   .sys { color:var(--faint); font-size:11px; margin:8px 0; }
   .sys.err { color:var(--bad); }
-  .sys.wake { margin:-6px 0 12px; padding-left:10px; border-left:2px solid var(--line); }
-  .sys.wake b { color:var(--dim); font-weight:600; }
-  .sys.wake .warn { color:var(--warn); }
-
-  /* Raw view. Every chunk is rendered as it arrives and hidden with CSS, so
-     toggling never re-subscribes or re-renders — there is no state to get
-     wrong and no race with the stream. */
-  .rawline {
-    display:none; font-size:11px; color:var(--dim); margin:3px 0;
-    white-space:pre-wrap; word-break:break-all;
-    border-left:2px solid var(--line); padding-left:8px;
-  }
-  .rawline .k { color:var(--accent); }
-  .showraw .rawline { display:block; }
-  .showraw .msg.agent { display:none; }
+  .mini.active { color:var(--accent); border-color:var(--accent); }
   .cursor::after {
     content:'▍'; color:var(--accent);
     animation:blink 1s steps(2) infinite;
@@ -191,17 +177,66 @@
   .ctxnew { animation:flash 1.4s ease-out; }
   @keyframes flash { from { background:var(--panel2); } to { background:var(--bg); } }
 
-  /* Per-turn digest. Hidden until asked for: it answers "why did the agent not
-     see that", which is a question you only have sometimes. */
-  .dbg {
-    display:none; font-size:11px; color:var(--faint);
-    margin:-8px 0 10px; padding-left:10px;
-    border-left:2px solid var(--line);
+  /* Inspector output lives below the conversation: alongside shared context it
+     would make two supplementary columns squeeze the one thing that must stay
+     readable. Its fixed share gives both panes their own scroll position. */
+  .inspector {
+    flex:0 1 clamp(160px,30vh,300px); min-height:120px; min-width:0;
+    display:flex; flex-direction:column; border-top:1px solid var(--line);
+    background:var(--panel2);
   }
-  .showdbg .dbg { display:block; }
-  .dbg b { color:var(--dim); font-weight:600; }
+  .inspector[hidden] { display:none; }
+  .inspecthead {
+    display:flex; align-items:baseline; gap:10px; padding:7px 16px;
+    flex-shrink:0; border-bottom:1px solid var(--line); background:var(--panel);
+  }
+  .inspecttitle {
+    color:var(--fg); font-size:11px; font-weight:600;
+    letter-spacing:.12em; text-transform:uppercase;
+  }
+  .inspectnote { color:var(--faint); font-size:10px; }
+  .inspectbody {
+    flex:1; min-height:0; overflow:auto; padding:10px 14px;
+  }
+  .rawline, .dbg {
+    font-size:11px; color:var(--dim); margin:0 0 6px; padding:6px 8px;
+    border-left:2px solid var(--line); background:var(--bg);
+    white-space:pre-wrap; overflow-wrap:anywhere;
+  }
+  .inspectagent { font-weight:600; }
+  /* The same line, standing in the transcript rather than in the inspector.
+     Quieter than a message and louder than nothing. */
+  .dbg.inline {
+    background:none; margin:-6px 0 12px; padding:0 0 0 10px;
+    max-width:min(760px,92%);
+  }
+  .rawline .k { color:var(--dim); }
+  .dbg b { color:var(--fg); font-weight:600; }
   .dbg .warn { color:var(--warn); }
   .dbg .none { color:var(--faint); font-style:italic; }
+  @media (max-height:640px) {
+    .inspector { flex-basis:120px; min-height:100px; }
+  }
+
+  /* The secret, shown once. Loud because it cannot be shown again: the server
+     keeps only a hash, so a room whose secret scrolled past is a room nobody
+     else can be let into. */
+  .secretbox {
+    border-top:1px solid var(--accent); background:var(--panel);
+    padding:12px 16px; flex-shrink:0;
+  }
+  .secrethead {
+    color:var(--accent); font-size:11px; letter-spacing:.1em;
+    text-transform:uppercase; font-weight:600; margin-bottom:6px;
+  }
+  #secretval {
+    display:block; background:var(--bg); border:1px solid var(--line);
+    border-radius:6px; padding:7px 9px; font-size:12px; color:var(--fg);
+    overflow-wrap:anywhere;
+  }
+  .secretnote { color:var(--faint); font-size:11px; margin-top:6px; }
+  .secretnote code { color:var(--dim); }
+  .secretrow { display:flex; gap:8px; margin-top:8px; }
 
   .composer {
     border-top:1px solid var(--line); padding:12px 16px;
@@ -281,8 +316,10 @@
       <span><span class="k">session</span> <span class="v" id="rsid"></span></span>
       <span class="drop"><span class="k">in the room</span> <span class="v" id="ragent"></span></span>
       <span class="spacer"></span>
-      <button class="mini" id="rawbtn" title="show every chunk exactly as the agent sent it">raw</button>
-      <button class="mini" id="dbgbtn" title="show what each agent was handed from shared context">debug</button>
+      <button class="mini" id="rawbtn" title="show every chunk exactly as the agent sent it"
+              aria-controls="inspector" aria-pressed="false">raw</button>
+      <button class="mini" id="dbgbtn" title="show what each agent was handed from shared context"
+              aria-controls="inspector" aria-pressed="false">debug</button>
       <span class="v" id="rstate"></span>
       <span class="queue" id="rqueue"></span>
     </div>
@@ -293,6 +330,29 @@
       <div class="empty" id="empty">
         <div>no room open</div>
         <div style="font-size:12px">pick one or more agents, then <b>+ new session</b></div>
+      </div>
+    </div>
+
+    <div class="inspector" id="inspector" role="region" aria-labelledby="inspecttitle" hidden>
+      <div class="inspecthead">
+        <span class="inspecttitle" id="inspecttitle">raw output</span>
+        <span class="inspectnote" id="inspectnote">every output.part payload, unchanged</span>
+      </div>
+      <div class="inspectbody" id="rawview"></div>
+      <div class="inspectbody" id="dbgview" hidden></div>
+    </div>
+
+    <!-- Shown once, when a room is created. The server cannot reissue it. -->
+    <div class="secretbox" id="secretbox" style="display:none">
+      <div class="secrethead">this room's secret — shown once</div>
+      <code id="secretval"></code>
+      <div class="secretnote">
+        You are already in. Anyone else needs this to join, from a second tab or
+        from <code>oryxa tail &lt;id&gt; -secret …</code>
+      </div>
+      <div class="secretrow">
+        <button class="mini" id="secretcopy">copy</button>
+        <button class="mini" id="secretdone">got it</button>
       </div>
     </div>
 
@@ -318,7 +378,10 @@ const $ = s => document.querySelector(s);
 const api = (p, opt) => fetch(p, opt).then(async r => {
   const t = await r.text();
   let b = null; try { b = t ? JSON.parse(t) : null; } catch { b = { raw: t }; }
-  if (!r.ok) throw Object.assign(new Error((b && b.error) || r.statusText), { body: b });
+  // Status travels with the error: 404 on a room means "not yours or not
+  // there", which is the one case worth offering a secret for.
+  if (!r.ok) throw Object.assign(new Error((b && b.error) || r.statusText),
+    { body: b, status: r.status });
   return b;
 });
 
@@ -518,15 +581,59 @@ $('#newbtn').onclick = async () => {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ agents: [...selAgents] })
   });
-  await poll(); openSession(s.id);
+  await poll();
+  openSession(s.id);
+  // Shown once, because this is the only time it exists. Creating the room also
+  // set a cookie, so this tab is already in — this line is for everyone else.
+  //
+  // Deliberately not kept in localStorage. The cookie the server set is
+  // HttpOnly and this page cannot read it; copying the secret into storage
+  // would trade that away so a refresh could skip one prompt.
+  if (s.secret) showSecret(s.id, s.secret);
 };
 
+// Rooms are entered with a secret, not with a name, so a tab that did not open
+// one has to be let in. The secret goes straight to /join, which returns an
+// HttpOnly cookie scoped to that room; it is never held in JavaScript after.
+async function joinRoom(id) {
+  const secret = prompt(`Secret for ${id}:\n\nShown once when the room was opened.`);
+  if (!secret) return false;
+  try {
+    await api(`/v1/sessions/${id}/join`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ secret: secret.trim() })
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showSecret(id, secret) {
+  const box = $('#secretbox');
+  $('#secretval').textContent = secret;
+  box.style.display = 'block';
+  $('#secretcopy').onclick = () => navigator.clipboard?.writeText(secret);
+  $('#secretdone').onclick = () => { box.style.display = 'none'; };
+}
+
 async function openSession(id) {
+  // A room this browser has no cookie for answers 404, the same answer a room
+  // that does not exist gives — so the only way to tell them apart is to try
+  // the secret. Asking first would tell a stranger which rooms are real.
+  try {
+    await api('/v1/sessions/' + id);
+  } catch (e) {
+    if (e.status === 404 && !(await joinRoom(id))) return;
+  }
+
   selSession = id; lastSeq = 0; turns.clear(); lanes.clear();
   $('#empty').style.display = 'none';
   $('#roomhead').style.display = 'flex';
   $('#composer').style.display = 'flex';
   $('#transcript').innerHTML = '';
+  $('#rawview').innerHTML = '';
+  $('#dbgview').innerHTML = '';
   $('#rsid').textContent = id;
   $('#ctxpanel').style.display = 'block';
   ctxSig = '';
@@ -573,7 +680,7 @@ function onEvent(ev) {
       startAgent(ev.turn, d.agent || ev.actor, (d.inputs || []).length);
       digestLine(d.agent || ev.actor, d.context); break;
     case 'output.part':
-      rawLine(d);
+      rawLine(d.agent || ev.actor, d);
       if (d.kind === 'text') appendAgent(ev.turn, d.text);
       else if (d.kind === 'error') sys('agent error: ' + (d.text||''), true);
       break;
@@ -592,16 +699,11 @@ function onEvent(ev) {
       endAgent(ev.turn); sys('turn cancelled'); break;
 
     // A turn that worked and said nothing. Not an error, so it is not shown as
-    // one — but a silent agent is the failure people blame the framework for,
-    // and the server already worked out which half it came from.
+    // one in the transcript — but a silent agent is the failure people blame
+    // the framework for, and the server already worked out which half it came
+    // from. Keep that diagnosis with the evidence it refers to.
     case 'turn.empty': {
-      // The selectors travel with the event precisely so this line can show
-      // them: reading them against the raw view is the step that settles it.
-      const sel = [];
-      if (d.text) sel.push(`text: ${[].concat(d.text).join(' | ')}`);
-      if (d.when) sel.push(`when: ${d.when}`);
-      sys(`${ev.actor || 'agent'} finished without saying anything — ${d.reason || 'no text'}`
-        + (sel.length ? `  [${sel.join('  ')}]` : ''), false);
+      emptyLine(ev.actor, d);
       break;
     }
 
@@ -673,6 +775,52 @@ function renderContext(entries) {
   }
 }
 
+// Inspector entries are appended on arrival even while their view is closed.
+// Opening a view therefore changes only visibility, never the event stream or
+// a reconstruction of it.
+function inspectorAppend(view, el) {
+  const body = $('#' + view + 'view');
+  const follow = $('#inspector').hidden ||
+    body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+  body.appendChild(el);
+  if (follow) body.scrollTop = body.scrollHeight;
+}
+
+function inspectorAgent(name) {
+  const el = document.createElement('span');
+  el.className = 'inspectagent';
+  el.style.color = agentColour(name);
+  el.textContent = name || 'agent';
+  return el;
+}
+
+function toggleInspector(view) {
+  const panel = $('#inspector');
+  const closing = !panel.hidden && panel.dataset.view === view;
+  panel.hidden = closing;
+  panel.dataset.view = closing ? '' : view;
+  $('#rawview').hidden = view !== 'raw';
+  $('#dbgview').hidden = view !== 'dbg';
+
+  const active = closing ? '' : view;
+  for (const v of ['raw', 'dbg']) {
+    const button = $('#' + v + 'btn');
+    button.classList.toggle('active', active === v);
+    button.setAttribute('aria-pressed', active === v ? 'true' : 'false');
+  }
+  if (closing) return;
+
+  $('#inspecttitle').textContent = view === 'raw' ? 'raw output' : 'turn debug';
+  $('#inspectnote').textContent = view === 'raw'
+    ? 'every output.part payload, unchanged'
+    : 'wake decisions, context digests, and silent turns';
+  const body = $('#' + view + 'view');
+  body.scrollTop = body.scrollHeight;
+}
+
+$('#rawbtn').onclick = () => toggleInspector('raw');
+$('#dbgbtn').onclick = () => toggleInspector('dbg');
+
 // digestLine renders what this agent was actually handed. The two numbers that
 // matter are separate on purpose: the room can be large while an agent that
 // reads none of it is charged nothing, and that is the thing people expect to
@@ -690,38 +838,62 @@ function digestLine(agent, c) {
 
   const el = document.createElement('div');
   el.className = 'dbg';
-  el.innerHTML = `${esc(agent)} · ` + parts.join(' · ');
-  $('#transcript').appendChild(el);
+  el.append(inspectorAgent(agent), document.createTextNode(' · context · '));
+  const detail = document.createElement('span');
+  detail.innerHTML = parts.join(' · ');
+  el.appendChild(detail);
+  inspectorAppend('dbg', el);
 }
 
 // wakeLine says who a message reached. Silence is the hardest thing to debug
-// here — nothing errors and the connector looks fine — so the reason a message
-// did or did not reach an agent is worth showing next to the message itself.
+// here — nothing errors and the connector looks fine — so the inspector keeps
+// the routing decision without interrupting the conversation it diagnosed.
 function wakeLine(wake, why) {
   if (!why) return;
   const n = (wake || []).length;
   const el = document.createElement('div');
+  el.className = 'dbg';
+  el.append(document.createTextNode('wake · '));
+  if (!n) {
+    const nobody = document.createElement('span');
+    nobody.className = 'warn';
+    nobody.textContent = 'nobody — this needs no answer';
+    el.appendChild(nobody);
+  } else {
+    for (const [i, agent] of wake.entries()) {
+      if (i) el.append(document.createTextNode(', '));
+      el.appendChild(inspectorAgent(agent));
+    }
+  }
+  const reason = document.createElement('b');
+  reason.textContent = why;
+  el.append(document.createTextNode(' · '), reason);
 
   // Everyone answering is what a room does by default, so saying so every time
-  // is noise and stays behind the debug toggle. Anything else is the room making
-  // a decision, and hiding those is how it looks broken: a message nobody
-  // answers is indistinguishable from a message that was dropped, and that is
-  // the single most alarming thing this product can do without explanation.
-  const remarkable = n < roomAgents.length;
-  el.className = remarkable ? 'sys wake' : 'dbg';
-
-  const to = n === 0
-    ? '<span class="warn">nobody — this needs no answer</span>'
-    : (n >= roomAgents.length ? `everyone (${n})` : (wake || []).map(esc).join(', '));
-  el.innerHTML = `→ ${to} · <b>${esc(why)}</b>`;
-  $('#transcript').appendChild(el);
+  // is noise and belongs in the inspector. Anything narrower is the room making
+  // a decision, and those go in the transcript where they cannot be missed: a
+  // message nobody answers is otherwise indistinguishable from a message that
+  // was dropped, which is the most alarming thing this can do without saying so.
+  if (n < roomAgents.length) {
+    el.classList.add('inline');
+    $('#transcript').appendChild(el);
+    return;
+  }
+  inspectorAppend('dbg', el);
 }
 
-$('#dbgbtn').onclick = () => {
-  const on = $('#transcript').classList.toggle('showdbg');
-  $('#dbgbtn').style.borderColor = on ? 'var(--accent)' : '';
-  scroll();
-};
+function emptyLine(agent, d) {
+  const el = document.createElement('div');
+  el.className = 'dbg';
+  el.append(inspectorAgent(agent),
+    document.createTextNode(` · empty · ${d.reason || 'no text'}`));
+
+  const selectors = [];
+  if (d.text) selectors.push(`text: ${[].concat(d.text).join(' | ')}`);
+  if (d.when) selectors.push(`when: ${d.when}`);
+  if (selectors.length) el.append(document.createTextNode(` · ${selectors.join(' · ')}`));
+  inspectorAppend('dbg', el);
+}
 
 function addUser(turnId, who, text) {
   const m = document.createElement('div');
@@ -762,25 +934,23 @@ function appendAgent(turnId, text) {
 function endAgent(turnId) {
   const t = turns.get(turnId); if (!t || !t.el) return;
   t.el.classList.remove('cursor');
-  if (!t.out) t.el.textContent = '(no text — check the connector selectors)';
+  if (!t.out) t.el.textContent = '(no text)';
 }
 
 // Oryxa records every chunk an agent emits, verbatim; the connector's `text:`
 // selector only decides what the default transcript shows. The raw view makes
 // that visible — nothing is discarded, and a connector picking the wrong field
 // is diagnosed by looking rather than guessing.
-$('#rawbtn').onclick = () => {
-  const on = $('#transcript').classList.toggle('showraw');
-  $('#rawbtn').style.borderColor = on ? 'var(--accent)' : '';
-  scroll();
-};
-
-function rawLine(d) {
+function rawLine(agent, d) {
   const el = document.createElement('div');
   el.className = 'rawline';
   const body = d.raw !== undefined ? JSON.stringify(d.raw) : JSON.stringify(d);
-  el.innerHTML = `<span class="k">${esc(d.kind)}</span> ${esc(body)}`;
-  $('#transcript').appendChild(el);
+  const kind = document.createElement('span');
+  kind.className = 'k';
+  kind.textContent = d.kind || 'part';
+  el.append(inspectorAgent(agent), document.createTextNode(' · '), kind,
+    document.createTextNode(' ' + body));
+  inspectorAppend('raw', el);
 }
 
 function sys(text, bad) {

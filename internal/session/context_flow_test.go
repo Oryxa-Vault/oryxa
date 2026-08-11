@@ -129,7 +129,7 @@ func setup(t *testing.T, specs ...*connector.Spec) (*Manager, events.Store) {
 
 func room(t *testing.T, m *Manager, agents ...string) string {
 	t.Helper()
-	sum, err := m.Create(agents...)
+	sum, _, err := m.Create(agents...)
 	if err != nil {
 		t.Fatal(err)
 	}

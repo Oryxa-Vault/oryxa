@@ -32,9 +32,19 @@ func parseArgs(fs *flag.FlagSet, args []string) []string {
 	}
 }
 
+// flagSecret is -secret, for reaching a room this machine did not open.
+//
+// A package-level value because every room command needs it and none of them
+// pass it down: the secret is looked up per request from the path, the same way
+// the token is looked up from the client.
+var flagSecret string
+
 // Commands that talk to a running server. Every one takes -server and -token,
 // falling back to ORYXA_URL and ORYXA_TOKEN.
 func serverFlags(fs *flag.FlagSet) (*string, *string, *bool) {
+	fs.StringVar(&flagSecret, "secret", "",
+		"room secret, shown once when the room was opened (or ORYXA_SESSION_SECRET). "+
+			"Rooms opened on this machine are remembered, so this is for joining someone else's")
 	return fs.String("server", "", "Oryxa URL (or ORYXA_URL; default http://localhost:8080)"),
 		fs.String("token", "", "API token (or ORYXA_TOKEN)"),
 		fs.Bool("json", false, "print raw JSON instead of a table")
@@ -90,13 +100,23 @@ func cmdOpen(args []string) {
 	c := newClient(*server, *token)
 	fail(c.do("POST", "/v1/sessions", map[string]any{"agents": agents}, &out))
 
+	// Written down before anything is printed. The server cannot reissue it, so
+	// losing it here would mean losing the room to a terminal that scrolled.
+	id, _ := out["id"].(string)
+	secret, _ := out["secret"].(string)
+	rememberRoom(id, secret)
+
 	if *asJSON {
 		printJSON(out)
 		return
 	}
-	fmt.Printf("\n  %v\n  agents: %s\n\n", out["id"], strings.Join(agents, ", "))
-	fmt.Printf("  oryxa send %v \"your question\"\n", out["id"])
-	fmt.Printf("  oryxa tail %v\n\n", out["id"])
+	fmt.Printf("\n  %v\n  agents: %s\n\n", id, strings.Join(agents, ", "))
+	fmt.Printf("  oryxa send %v \"your question\"\n", id)
+	fmt.Printf("  oryxa tail %v\n\n", id)
+	// Shown once, because this is the only time it exists. Everything on this
+	// machine now finds it without being told; anyone else needs this line.
+	fmt.Printf("  secret  %s\n", secret)
+	fmt.Printf("  someone else joins with: oryxa tail %v -secret %s\n\n", id, secret)
 }
 
 // ---- send ----
