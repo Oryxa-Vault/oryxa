@@ -9,10 +9,43 @@ disclaimer; it's a specific, known gap:
   proxy in front of it (`ORYXA_TRUST_HEADER`). Without that proxy, callers assert
   their own identity. Names in the log are claims, and anything that reads them —
   who spoke, who a message was for — is only as good as that source.
-- **No rate limiting.** A token holder can start unbounded turns. With a
-  command-line agent behind a connector, that is unbounded spend.
-- **The agent registry is not scoped.** Anyone with the token can register or
-  delete an agent, and deleting one that rooms depend on is a denial of service.
+### Turn budgets
+
+A turn is an agent doing work — a model call at best, and behind a command-line
+connector, minutes of one. Turns are bounded per room and across the server,
+default 30 and 120 a minute, `0` for unlimited. Over budget answers 429 with
+`Retry-After`.
+
+The unit is the turn rather than the request, because one message can wake seven
+agents and cost seven, or wake nobody and cost nothing. The bucket is checked
+before a message is accepted and charged for the turns it actually started, so
+the wake ladder shows up in the bill: acknowledgements never drain a budget.
+They cannot refill one either — a room already over budget refuses everything
+until it recovers, because whether a message is free is not knowable until the
+ladder has run, and running it means accepting the message.
+
+Keyed by room and by server, never by author. An author name is a string the
+caller picks, so a per-author limit would be bypassed by picking another one —
+the same reason read scoping is a capability. A limit that looks like a limit
+and is not is worse than none, because it gets budgeted for.
+
+### The agent registry
+
+`POST` and `DELETE /v1/agents` change configuration, and everything else here
+treats configuration as something that comes from the machine: connectors are
+files, and what the shim may run is a file. `-admin-token` requires a second
+credential for those two routes, sent as `X-Oryxa-Admin`. Reading the registry
+and `check` are not privileged — putting the Test Connection button behind a
+credential nobody in the viewer holds would be the wrong trade.
+
+Unset, the registry is open to any token holder and the banner says so.
+
+Removing an agent that an **open** room holds is refused with 409 and the list of
+rooms, whether or not an admin token is set: it leaves those rooms with a lane
+that can never run a turn and nothing in the room saying why, and there is no
+recovery but registering it again. `?force=true` when that is the point. Closed
+rooms do not pin an agent — they are history, and history may name something that
+no longer exists.
 
 ### Read scoping — built
 
