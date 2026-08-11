@@ -80,6 +80,18 @@ type ContextRule struct {
 	// Pin marks the entry as part of the curated set that {{context.pinned}}
 	// renders.
 	Pin bool `yaml:"pin" json:"pin,omitempty"`
+
+	// Last keeps only the final match from a turn instead of every match.
+	//
+	// An agent that says several things in one turn says them in order, and what
+	// it concluded is the last one. Without this, a rule on an agent that opens
+	// with "I'll check the repository" records that as a finding beside the
+	// finding — one entry of substance and one of throat-clearing, indistinguishable
+	// afterwards.
+	//
+	// Only meaningful for a selector: $text is already the whole turn, and a
+	// value entry already keeps the last write.
+	Last bool `yaml:"last" json:"last,omitempty"`
 }
 
 // FromText reports whether the rule reads the turn's own output rather than
@@ -121,6 +133,19 @@ type Response struct {
 	//	when: $.partial
 	//	when: $.type == TEXT_MESSAGE_CONTENT
 	When string `yaml:"when" json:"when,omitempty"`
+
+	// Join goes between text parts. Empty — the default — concatenates them
+	// with nothing, which is right for an agent streaming token deltas: "hel"
+	// and "lo" are one word.
+	//
+	// It is wrong for an agent that emits whole messages. Command-line agents do:
+	// a preamble and then an answer arrive as two complete sentences, and
+	// concatenating them produces "…exact one-line purpose.`oryxa-shim` exposes
+	// …". Nothing in a payload distinguishes a delta from a message, so the
+	// connector has to say which this agent sends.
+	//
+	//	join: "\n\n"
+	Join string `yaml:"join" json:"join,omitempty"`
 }
 
 func (s *Spec) Has(cap string) bool {

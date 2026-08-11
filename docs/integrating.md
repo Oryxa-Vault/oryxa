@@ -317,6 +317,29 @@ when: $.type != REASONING_CONTENT      # not equals
 Gated-out chunks become `activity` rather than disappearing, so a mis-set `when`
 is visible in the log instead of hiding behind an empty reply.
 
+### `join:` — deltas or whole messages
+
+Text parts concatenate with nothing between them, which is right for an agent
+streaming tokens: `hel` and `lo` are one word.
+
+It is wrong for an agent that sends whole messages. Command-line agents do — a
+preamble and then an answer arrive as two complete sentences, and the room shows
+them run together mid-sentence:
+
+```
+…so the one-line description matches exactly.`oryxa-shim` exposes command-line…
+```
+
+Nothing in a payload says which kind of agent you have, so the connector does:
+
+```yaml
+response:
+  join: "\n\n"
+```
+
+The separator lands on the assembled text and never on the raw payload — what the
+agent sent stays exactly what it sent.
+
 ### Shared context
 
 A room has shared state: notes, findings and decisions that everyone in it can
@@ -347,8 +370,15 @@ That is the whole feature. The agent above now contributes every answer to
 | `key` | the entry to write |
 | `from` | `$text`, or a selector into the response payload |
 | `kind` | `append` (default) or `value` |
+| `last` | keep only the final match from a turn |
 | `when` | gate which chunks a selector reads — same syntax as `response.when` |
 | `pin` | mark the entry as part of `{{context.pinned}}` |
+
+**`last: true` when your agent thinks out loud.** An agent that says several
+things in one turn says them in order, so what it concluded is the last of them.
+Without it, an agent that opens with *"I'll check the repository"* records that
+as a finding beside the finding, and afterwards nothing tells them apart. Leave
+it off for a rule reading tool results or citations, where every match matters.
 
 `append` is the default because it cannot conflict. Use `value` for state with
 one current answer:

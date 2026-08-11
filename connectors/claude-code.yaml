@@ -60,6 +60,9 @@ turn:
     when: $.type == assistant
     text:
       - $.message.content[*].text
+    # Whole messages rather than token deltas: the CLI sends one assistant event
+    # per block, so without a separator two sentences run together.
+    join: "\n\n"
 
 # What this agent leaves behind for the rest of the room.
 #
