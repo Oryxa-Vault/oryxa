@@ -182,6 +182,19 @@ agents:
              --tools, "Read,Grep,Glob", --resume, "{{handle}}"]
 ```
 
+`ORYXA_SHIM_TOKEN` guards the shim, and the connectors send it as a bearer —
+which means **both processes need it in their environment**, the shim to check it
+and the server to render it into the request:
+
+```bash
+export ORYXA_SHIM_TOKEN=$(openssl rand -hex 32)
+oryxa-shim -agents shim.yaml &
+oryxa serve                       # same shell, same variable
+```
+
+Set on only one side, the server starts, every agent looks healthy, and every
+turn fails with a 401 that names neither end.
+
 > **Read-only by default, and this is the line to think about before changing
 > it.** Anyone who can reach the room can make this agent act. An allowlist is a
 > stronger boundary than a permission mode because it cannot be prompted around:
