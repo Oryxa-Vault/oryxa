@@ -79,17 +79,27 @@ func newFanout() *fanout {
 	return &fanout{subs: map[string]map[chan Event]struct{}{}, cap: 64}
 }
 
+// publish sends to every current subscriber, holding the lock throughout.
+//
+// The lock covers the sends, not merely the lookup, and that is the whole point:
+// a send on a closed channel panics, and `select` with a `default` does not
+// change that — default only guards a send that would *block*. Copying the
+// subscriber list and then sending after unlocking leaves a window where
+// unsubscribe can close a channel that publish is about to send on, and the
+// panic is in a goroutine, so it takes the process down rather than one stream.
+//
+// Reaching it needs no unusual timing: a viewer closing a tab while its room is
+// mid-turn is the exact shape, and a room is mid-turn most of the time it is
+// interesting. Holding the lock is cheap because every send below is
+// non-blocking — the critical section is a bounded number of operations that
+// cannot wait on anything.
 func (f *fanout) publish(ev Event) {
 	f.mu.Lock()
-	chans := make([]chan Event, 0, len(f.subs[ev.Session]))
-	for ch := range f.subs[ev.Session] {
-		chans = append(chans, ch)
-	}
-	f.mu.Unlock()
+	defer f.mu.Unlock()
 
 	// A slow subscriber must not stall the turn loop. It drops frames and
 	// recovers with ?since= on reconnect, which the log already supports.
-	for _, ch := range chans {
+	for ch := range f.subs[ev.Session] {
 		select {
 		case ch <- ev:
 		default:
@@ -106,12 +116,16 @@ func (f *fanout) subscribe(sessionID string) (<-chan Event, func()) {
 	f.subs[sessionID][ch] = struct{}{}
 	f.mu.Unlock()
 
+	// The close happens under the same lock as the delete, so it cannot land
+	// between publish choosing this channel and publish sending on it. Once is
+	// belt and braces: a handler that cancels twice would otherwise close twice,
+	// which panics just as loudly.
 	var once sync.Once
 	return ch, func() {
 		once.Do(func() {
 			f.mu.Lock()
+			defer f.mu.Unlock()
 			delete(f.subs[sessionID], ch)
-			f.mu.Unlock()
 			close(ch)
 		})
 	}
