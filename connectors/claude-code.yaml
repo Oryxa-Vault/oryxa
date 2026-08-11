@@ -20,6 +20,16 @@ name: claude-code
 base: http://{{env.ORYXA_SHIM_HOST}}:8090
 timeout: 15m
 
+# The shim's token, when it has one. Unset this renders as an empty bearer, and a
+# shim with no token ignores it — so the same file works on a laptop and behind a
+# shared port.
+#
+# Without this the shim can be given a token and nothing can then reach it, which
+# is a server that starts, looks healthy, and fails every turn with a 401 that
+# names neither side.
+headers:
+  Authorization: "Bearer {{env.ORYXA_SHIM_TOKEN}}"
+
 capabilities: [stream, multi_turn]
 
 interests: [repo, codebase, bug, stack trace, test, refactor, build, ci, regression]

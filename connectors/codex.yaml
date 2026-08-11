@@ -26,6 +26,11 @@ name: codex
 base: http://{{env.ORYXA_SHIM_HOST}}:8090
 timeout: 15m
 
+# The shim's token, when it has one. Empty renders as a bearer with nothing after
+# it, which a shim without a token ignores.
+headers:
+  Authorization: "Bearer {{env.ORYXA_SHIM_TOKEN}}"
+
 capabilities: [stream, multi_turn]
 
 interests: [repo, codebase, bug, stack trace, test, refactor, build, ci, regression]
