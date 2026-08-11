@@ -116,21 +116,29 @@ repository. Three properties hold it together, and all three are deliberate:
   token.** Not a warning — reaching this port is enough to run what is in the
   config file, and a line printed at startup is read once, by someone who has
   already decided to run the command.
-- **The two shipped agents are deliberately asymmetric.** `claude-code` runs
-  with a read-only tool allowlist — a stronger boundary than a permission mode,
-  because it cannot be prompted around. `codex` runs with `-s workspace-write`
-  and **can write inside its working directory**.
+- **Both shipped agents can write inside their working directory.** Read-only
+  made them worse colleagues than they needed to be: asked what was wrong with
+  this repo, Codex found a real crash in the event fan-out and could only report
+  it as a suspicion, because `go test` could not create its build directory.
 
-  The asymmetry is the point: one agent that can run the tests and one that
-  cannot. Read-only made Codex a worse colleague than it needed to be — asked
-  what was wrong with this repo it found a real crash in the event fan-out and
-  could only report it as a suspicion, because `go test` could not create its
-  build directory. Verifying is most of what a coding agent is for.
+  **They are confined by different mechanisms, and only one of them is a
+  sandbox.** Codex runs under `-s workspace-write`, enforced by the OS. Claude
+  Code has no sandbox — `dir:` sets the working directory and nothing stops an
+  absolute path leaving it, which was verified rather than assumed: with `Write`
+  merely allowed, it created a file in `/tmp` without objection. It is confined
+  instead by path-patterned permissions, `Edit(./**)` and `Write(./**)`, and by
+  a shell narrowed to the project's build and test commands. With those in place
+  the same request is refused, and it says so.
 
-  What it costs: anyone who can reach a room holding `codex` can cause writes to
-  that directory. Point it at a checkout you can throw away, not the one you are
-  working in. Writes stay confined to that directory and temp — it cannot reach a
-  credential in `$HOME` even if asked to — and `-s read-only` puts it back.
+  Two consequences worth holding on to. A tool named in `--tools` but absent from
+  `--allowedTools` is *denied*, not prompted, in headless — so a missing pattern
+  looks like an agent that will not try rather than one that cannot. And the
+  patterns are the boundary: widening them to `Write(**)`, or adding a broad
+  `Bash(*)`, removes it entirely.
+
+  What it costs either way: anyone who can reach one of these rooms can cause
+  writes to that directory. Point it at a checkout you can throw away, not the
+  one you are working in.
 
 Treat the shim's host as the trust boundary: it has the credentials and the
 repository, and a room member's message is the input that drives it.
