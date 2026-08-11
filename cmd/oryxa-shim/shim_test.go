@@ -527,12 +527,40 @@ func TestLoopbackDetection(t *testing.T) {
 		"127.0.0.1:8090": true,
 		"localhost:8090": true,
 		"[::1]:8090":     true,
-		":8090":          false,
-		"0.0.0.0:8090":   false,
-		"10.0.0.4:8090":  false,
+		// A bare port binds every interface, which is the case most likely to be
+		// typed by someone who means "any port on this machine".
+		":8090":         false,
+		"0.0.0.0:8090":  false,
+		"[::]:8090":     false,
+		"10.0.0.4:8090": false,
 	} {
 		if got := isLoopback(addr); got != want {
 			t.Errorf("isLoopback(%q) = %v, want %v", addr, got, want)
+		}
+	}
+}
+
+// This port runs the commands in the config file, so reaching it is enough to
+// run them. Unauthenticated and off loopback is remote code execution by
+// design, and a startup warning is read once by someone who has already decided
+// to run the command — so it is refused instead.
+func TestExposedBindNeedsAToken(t *testing.T) {
+	cases := []struct {
+		addr, token string
+		refuse      bool
+	}{
+		{"127.0.0.1:8090", "", false}, // the default, and fine
+		{"localhost:8090", "", false},
+		{":8090", "", true}, // every interface, no token
+		{"0.0.0.0:8090", "", true},
+		{"10.0.0.4:8090", "", true},
+		{":8090", "secret", false}, // exposed on purpose, with a guard
+		{"0.0.0.0:8090", "secret", false},
+	}
+	for _, c := range cases {
+		got := !isLoopback(c.addr) && c.token == ""
+		if got != c.refuse {
+			t.Errorf("addr=%q token=%q refused=%v, want %v", c.addr, c.token, got, c.refuse)
 		}
 	}
 }

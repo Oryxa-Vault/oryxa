@@ -326,6 +326,14 @@ Unset, authors stay self-declared, and the startup banner says so:
 All three default to off so the two-minute quickstart stays two minutes. None
 should be off anywhere else.
 
+**Agents registered over the API may only reach public addresses.** `base` is a
+URL this server fetches, so without a line there, `POST /v1/agents` reads any
+internal service — and on a cloud host, the metadata endpoint holding its
+credentials. Connectors in `connectors/` are unaffected and may point anywhere,
+because a file on disk is configuration and pointing at localhost is what every
+connector here does. `-allow-private-agents` restores the old behaviour when you
+register agents on a private network deliberately.
+
 ## Shared context
 
 A room has shared state alongside its transcript — notes, decisions, working

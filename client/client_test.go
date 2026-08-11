@@ -32,7 +32,11 @@ func serve(t *testing.T) (*client.Client, *httptest.Server) {
 	reg := connector.NewRegistry()
 	log := events.NewMemory()
 	mgr := session.NewManager(reg, connector.NewExecutor(), log)
-	srv := httptest.NewServer(api.New(reg, connector.NewExecutor(), mgr, log).Routes())
+	// The client registers its helper agent over the API, pointing at an
+	// httptest server on loopback — which is exactly what the default refuses
+	// and exactly what this flag is for.
+	srv := httptest.NewServer(
+		api.New(reg, connector.NewExecutor(), mgr, log).WithPrivateAgents(true).Routes())
 	t.Cleanup(srv.Close)
 
 	c := client.New(srv.URL)

@@ -58,6 +58,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Refused rather than warned about. This port starts processes, so an
+	// unauthenticated one that anything can reach is remote code execution by
+	// design — and a warning printed at startup is read once, by someone who
+	// has already decided to run the command. The two safe shapes are loopback,
+	// or a token; anything else stops here.
+	if !isLoopback(*addr) && *token == "" {
+		fmt.Fprintf(os.Stderr,
+			"refusing to listen on %s without a token.\n\n"+
+				"This port runs the commands in %s, so reaching it is enough to run them.\n"+
+				"Either bind loopback (the default, 127.0.0.1:8090) or set one:\n\n"+
+				"    ORYXA_SHIM_TOKEN=$(openssl rand -hex 32) oryxa-shim -addr %s\n\n"+
+				"A token is not a substitute for keeping this off untrusted networks.\n",
+			*addr, *file, *addr)
+		os.Exit(1)
+	}
+
 	srv := &server{agents: agents, token: *token}
 	httpSrv := &http.Server{
 		Addr:              *addr,
@@ -101,10 +117,9 @@ func banner(addr, file, token string, agents *Agents) {
 		fmt.Printf("  ├─ auth        shared token\n")
 	}
 	if !isLoopback(addr) {
-		// Worth its own line rather than a footnote. Everything else here is a
-		// preference; this one hands the ability to start processes to the
-		// network.
-		fmt.Printf("  ├─ WARNING     %s is not loopback — this port starts processes\n", addr)
+		// Reached only with a token set, since the alternative is refused
+		// outright — but a token makes this safe from strangers, not safe.
+		fmt.Printf("  ├─ exposed     %s is not loopback; anyone with the token can run these\n", addr)
 	}
 	fmt.Printf("  └─ ready\n\n")
 	for _, a := range agents.List() {

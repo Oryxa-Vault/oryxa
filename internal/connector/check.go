@@ -50,6 +50,11 @@ func (e *Executor) Check(ctx context.Context, spec *Spec, probe string) *CheckRe
 	res := &CheckResult{Agent: spec.Name, Capabilities: spec.Capabilities}
 
 	base := Ctx{Vars: spec.Vars}.RenderString(spec.Base)
+	// Same policy as the turn path. Reachability is reported by opening a real
+	// connection, so without this a restricted spec could not fetch an internal
+	// service but could still be used to find out what is listening on one —
+	// a port scanner that answers one host per request.
+	ctx = withOrigin(ctx, spec.Source)
 	if err := dialable(ctx, base); err != nil {
 		res.Error = err.Error()
 		return res
@@ -314,6 +319,9 @@ func dialable(ctx context.Context, base string) error {
 		} else {
 			host += ":80"
 		}
+	}
+	if err := checkReachable(ctx, u.Hostname()); err != nil {
+		return err
 	}
 	d := net.Dialer{Timeout: 5 * time.Second}
 	conn, err := d.DialContext(ctx, "tcp", host)

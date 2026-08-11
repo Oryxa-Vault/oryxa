@@ -17,13 +17,18 @@ import (
 	"github.com/oryxa/oryxa/internal/session"
 )
 
+// newOryxa builds a server that trusts API-registered agents, because every
+// test here registers one pointing at an httptest server on loopback — which is
+// precisely what the default refuses, and precisely what -allow-private-agents
+// exists for. The refusal itself is tested in TestRegisteredAgentsCannotReach
+// PrivateAddresses, against a server built the ordinary way.
 func newOryxa(t *testing.T) *httptest.Server {
 	t.Helper()
 	reg := connector.NewRegistry()
 	log := events.NewMemory()
 	exec := connector.NewExecutor()
 	mgr := session.NewManager(reg, exec, log)
-	srv := httptest.NewServer(New(reg, exec, mgr, log).Routes())
+	srv := httptest.NewServer(New(reg, exec, mgr, log).WithPrivateAgents(true).Routes())
 	t.Cleanup(srv.Close)
 	return srv
 }

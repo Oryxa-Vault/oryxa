@@ -13,6 +13,30 @@ disclaimer; it's a specific, known gap:
   proxy in front of it (`ORYXA_TRUST_HEADER`). Without that proxy, callers assert
   their own identity.
 
+### Where a registered agent may point
+
+`POST /v1/agents` takes a connector whose `base` this server then fetches, which
+makes it a request forgery primitive if left unbounded: anyone holding the token
+could read internal services through it, and on a cloud instance the metadata
+endpoint that holds the instance's credentials.
+
+**Connectors are trusted by origin, not by address.** A file in `connectors/` is
+configuration an operator put on the disk, and pointing at localhost is the
+normal case — every verified connector here does it. A spec that arrived over
+HTTP may only reach public addresses: loopback, private, link-local, CGNAT,
+multicast and unspecified are refused.
+
+The check is in the dialer rather than at registration, because that is the only
+place the destination is known for certain. A name that resolves publicly when it
+is registered can resolve to `169.254.169.254` by the time it is fetched, and the
+connection is made to the address that was checked rather than to the name, so
+the second lookup in a rebinding attack never happens. Redirects are covered by
+the same guard, and so is `check` — which opens a real connection and would
+otherwise still answer "is something listening on this internal host".
+
+`-allow-private-agents` puts it back for deployments that register agents on a
+private network deliberately. The startup banner says so every time it is on.
+
 Run it on a laptop, behind a VPN, or behind an authenticating proxy you operate.
 Don't put it on the public internet yet.
 
@@ -26,8 +50,10 @@ repository. Three properties hold it together, and all three are deliberate:
   why exec is not a connector field: connectors are registrable over HTTP at
   `POST /v1/agents`, so a spec that could name a command would make that endpoint
   remote code execution behind one shared token.
-- **It binds to loopback by default** and says so loudly at startup when it does
-  not. `-token` guards it, and should be set whenever the port is shared.
+- **It binds to loopback by default, and refuses to bind anywhere else without a
+  token.** Not a warning — reaching this port is enough to run what is in the
+  config file, and a line printed at startup is read once, by someone who has
+  already decided to run the command.
 - **The shipped tool allowlist is read-only.** An allowlist is a stronger
   boundary than a permission mode because it cannot be prompted around. Widening
   it means anyone who can reach the room can change files on that machine —

@@ -1,6 +1,10 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -43,7 +47,7 @@ func TestRegisteredAgentSurvivesARestart(t *testing.T) {
 
 	// A restart: a brand new registry, nothing loaded from disk.
 	fresh := connector.NewRegistry()
-	n, shadowed, err := RestoreAgents(log, fresh)
+	n, shadowed, err := RestoreAgents(log, fresh, connector.FromAPI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +74,7 @@ func TestRestoreKeepsTheWholeSpec(t *testing.T) {
 	s.recordAgent("alice", full)
 
 	fresh := connector.NewRegistry()
-	if _, _, err := RestoreAgents(log, fresh); err != nil {
+	if _, _, err := RestoreAgents(log, fresh, connector.FromAPI); err != nil {
 		t.Fatal(err)
 	}
 	got, ok := fresh.Get("rich")
@@ -93,7 +97,7 @@ func TestRemovalOutlivesTheFileItDeleted(t *testing.T) {
 	s.recordAgentRemoved("alice", "from-a-file")
 
 	reloaded := registryWith(t, spec("from-a-file")) // LoadDir at startup
-	if _, _, err := RestoreAgents(log, reloaded); err != nil {
+	if _, _, err := RestoreAgents(log, reloaded, connector.FromAPI); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := reloaded.Get("from-a-file"); ok {
@@ -114,7 +118,7 @@ func TestLatestRegistrationWins(t *testing.T) {
 	s.recordAgent("bob", second)
 
 	fresh := connector.NewRegistry()
-	if _, _, err := RestoreAgents(log, fresh); err != nil {
+	if _, _, err := RestoreAgents(log, fresh, connector.FromAPI); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := fresh.Get("edited")
@@ -137,7 +141,7 @@ func TestApiOverridesAFileAndReportsIt(t *testing.T) {
 	onDisk.Timeout = "1m"
 	reg := registryWith(t, onDisk)
 
-	_, shadowed, err := RestoreAgents(log, reg)
+	_, shadowed, err := RestoreAgents(log, reg, connector.FromAPI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +212,7 @@ func TestAnUnparseableStoredAgentIsSkippedNotFatal(t *testing.T) {
 	s.recordAgent("alice", spec("fine"))
 
 	fresh := connector.NewRegistry()
-	n, _, err := RestoreAgents(log, fresh)
+	n, _, err := RestoreAgents(log, fresh, connector.FromAPI)
 	if err != nil {
 		t.Fatalf("one bad spec stopped the restore: %v", err)
 	}
@@ -221,7 +225,7 @@ func TestAnUnparseableStoredAgentIsSkippedNotFatal(t *testing.T) {
 }
 
 func TestRestoreOnAnEmptyLogIsFine(t *testing.T) {
-	n, shadowed, err := RestoreAgents(events.NewMemory(), connector.NewRegistry())
+	n, shadowed, err := RestoreAgents(events.NewMemory(), connector.NewRegistry(), connector.FromAPI)
 	if err != nil || n != 0 || shadowed != nil {
 		t.Fatalf("n=%d shadowed=%v err=%v", n, shadowed, err)
 	}
@@ -238,5 +242,84 @@ func TestReservedOnlyMatchesBookkeeping(t *testing.T) {
 	}
 	if !strings.HasPrefix(events.SystemStream, "_") {
 		t.Fatal("the reserved prefix and the constant disagree")
+	}
+}
+
+// The hole: POST /v1/agents accepts a `base` this server then fetches, so a
+// caller holding the token could use it to read anything the server can reach —
+// internal services, and on a cloud instance the metadata endpoint that holds
+// its credentials. Registration still succeeds; the fetch is what is refused,
+// because the destination is only knowable once a name has resolved.
+func TestRegisteredAgentsCannotReachPrivateAddresses(t *testing.T) {
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"output":"role credentials"}`))
+	}))
+	defer internal.Close()
+
+	reg := connector.NewRegistry()
+	log := events.NewMemory()
+	exec := connector.NewExecutor()
+	mgr := session.NewManager(reg, exec, log)
+	// Built the ordinary way: no WithPrivateAgents.
+	srv := httptest.NewServer(New(reg, exec, mgr, log).Routes())
+	defer srv.Close()
+
+	spec := map[string]any{
+		"name": "forged", "base": internal.URL,
+		"turn": map[string]any{"method": "POST", "path": "/",
+			"response": map[string]any{"format": "json", "text": []string{"$.output"}}},
+	}
+	body, _ := json.Marshal(spec)
+	resp, err := http.Post(srv.URL+"/v1/agents", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Fatalf("registration failed with %d; the refusal belongs at fetch time", resp.StatusCode)
+	}
+
+	got, ok := reg.Get("forged")
+	if !ok {
+		t.Fatal("agent was not registered")
+	}
+	if got.Source != connector.FromAPI {
+		t.Fatalf("registered agent was not marked untrusted: Source = %q", got.Source)
+	}
+
+	// And the probe, which is the reachability oracle.
+	resp2, err := http.Post(srv.URL+"/v1/agents/forged/check", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	var out map[string]any
+	json.NewDecoder(resp2.Body).Decode(&out)
+	if out["reachable"] == true {
+		t.Errorf("check reported an internal address as reachable: %v", out)
+	}
+}
+
+// A restart must not promote what the API registered into what a file may do.
+func TestRestoredAgentsStayUntrusted(t *testing.T) {
+	log := events.NewMemory()
+	reg := connector.NewRegistry()
+	srv := New(reg, connector.NewExecutor(), session.NewManager(reg, connector.NewExecutor(), log), log)
+	spec, err := connector.ParseYAML([]byte("name: later\nbase: http://example.com\nturn:\n  path: /\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.recordAgent("someone", spec)
+
+	fresh := connector.NewRegistry()
+	if _, _, err := RestoreAgents(log, fresh, connector.FromAPI); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := fresh.Get("later")
+	if !ok {
+		t.Fatal("agent was not restored")
+	}
+	if got.Source != connector.FromAPI {
+		t.Errorf("a restart promoted an API agent to trusted: Source = %q", got.Source)
 	}
 }

@@ -141,6 +141,19 @@ orchestration mistake. The body cannot override the header, and a request that
 skipped the proxy is refused rather than treated as anonymous. Unset, authors are
 self-declared and the banner says so.
 
+**Where a registered agent may point.** `POST /v1/agents` takes a `base` the
+server then fetches, so unbounded it is a request forgery primitive — internal
+services, and on a cloud host the metadata endpoint holding its credentials.
+Connectors are trusted by **origin** rather than by address: a file on disk may
+point anywhere, because pointing at localhost is what every verified connector
+does, while a spec that arrived over HTTP may only reach public addresses.
+
+The check sits in the dialer, not at registration. That is the only place the
+destination is known — a name resolving publicly at registration can resolve to
+link-local by the time it is fetched — and it covers redirects and `check` for
+free. The connection goes to the address that was checked rather than to the
+name, so the second lookup a rebinding attack needs never happens.
+
 **Auth.** One shared token, constant-time compared. `Authorization: Bearer` for
 clients; the viewer exchanges it for an HttpOnly cookie because `EventSource`
 cannot set headers and the stream needs authenticating too. Off by default, and

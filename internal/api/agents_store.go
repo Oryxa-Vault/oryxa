@@ -53,7 +53,7 @@ func (s *Server) recordAgentRemoved(actor, name string) {
 // cannot reach the filesystem. A collision is reported rather than silent,
 // because a file that looks authoritative and is being overridden is exactly
 // the kind of thing that costs an afternoon.
-func RestoreAgents(log events.Store, reg *connector.Registry) (restored int, shadowed []string, err error) {
+func RestoreAgents(log events.Store, reg *connector.Registry, origin connector.Origin) (restored int, shadowed []string, err error) {
 	evs, err := log.Since(events.SystemStream, 0)
 	if err != nil {
 		return 0, nil, fmt.Errorf("read %s: %w", events.SystemStream, err)
@@ -79,6 +79,10 @@ func RestoreAgents(log events.Store, reg *connector.Registry) (restored int, sha
 			if _, existed := reg.Get(spec.Name); existed {
 				shadowed = append(shadowed, spec.Name)
 			}
+			// Everything in this log arrived over the API, and a restart is not
+			// a promotion. Source is deliberately not serialised, so it has to
+			// be re-established here rather than read back.
+			spec.Source = origin
 			if perr := reg.Put(spec); perr != nil {
 				fmt.Printf("oryxa: skipping stored agent %q: %v\n", spec.Name, perr)
 				continue
