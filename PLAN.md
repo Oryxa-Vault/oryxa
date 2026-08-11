@@ -169,6 +169,13 @@ startup and cost process supervision, leaked children on abandoned rooms, and a
 crashed turn poisoning the lane — real complexity against a saving that is noise
 next to a turn measured in minutes.
 
+The second agent settled the config format. Claude Code accepts a session id you
+name; Codex mints its own and announces it. Resuming is a flag on one and a
+subcommand on the other, and Codex's `resume` rejects the sandbox flag its own
+`exec` requires. So `first` and `resume` are complete command lines: a scheme
+that appended flags to a shared base would have broken on the second agent, not
+the third. Neither difference reaches a connector.
+
 ### Verified against real servers and a real model
 
 | Framework | Shape |
@@ -179,6 +186,7 @@ next to a turn measured in minutes.
 | CrewAI | FastAPI wrapper, non-streaming, multi-agent inside one turn |
 | AG-UI | a protocol, not a framework — typed events, tool calls |
 | Claude Code | a command, not a server — NDJSON on stdout, resumed by session id |
+| Codex | a command too, disagreeing with Claude Code on every detail of how |
 
 Also verified: token-level streaming, multi-turn continuity across several
 people, a tool-using agent (six tool calls in one turn, none leaking into the

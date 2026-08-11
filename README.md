@@ -136,8 +136,9 @@ continuity across several people.
 | [crewai.yaml](connectors/crewai.yaml) | CrewAI | hand-rolled FastAPI, no streaming, multi-agent inside |
 | [bee-agui.yaml](connectors/bee-agui.yaml) | AG-UI (any) | typed event protocol — tool calls, reasoning, state deltas |
 | [claude-code.yaml](connectors/claude-code.yaml) | Claude Code | a **command**, not a server — NDJSON over stdout |
+| [codex.yaml](connectors/codex.yaml) | Codex | a command too, and a different one in every detail |
 
-Six genuinely different surfaces, one core, one YAML file each.
+Seven genuinely different surfaces, one core, one YAML file each.
 `connectors/templates/` has starting points including plain HTTP.
 
 CrewAI is the sharpest test of the boundary: a crew is multi-agent by design, so
@@ -196,10 +197,16 @@ turn is a whole agentic loop rather than one model call, which is what makes
 saving when a call is cheap and a different product when it is a three-minute
 coding turn.
 
-`codex.yaml` ships as a starting point rather than a verified connector — the
-shape is written from Codex's documented `exec --json` surface and has not been
-run against the CLI. `oryxa check codex` prints the first payload it sees, which
-is the fastest way to fix the selectors.
+**Codex is the one that proves the shim is not a Claude Code adapter.** The two
+CLIs disagree on nearly everything: Claude Code accepts a session id you name,
+Codex mints its own and announces it as `thread_id`; resuming is a flag on one
+and a subcommand on the other, and Codex's `resume` rejects the sandbox flag its
+own `exec` requires, so it has to arrive as a config override. That is why
+`first` and `resume` are complete command lines rather than a base plus extras —
+a scheme clever enough to append flags would have broken on the second agent,
+not the third.
+
+None of it reaches the connector, and neither CLI needed a spec change.
 
 ---
 

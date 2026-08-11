@@ -1,19 +1,27 @@
-# STARTING POINT — not yet verified against a running Codex CLI.
+# Codex, through oryxa-shim — verified against codex-cli 0.147.0.
 #
-# Written from Codex's documented `exec --json` surface, through oryxa-shim.
-# The event shape has moved between releases, so expect to adjust `text` and the
-# `when` gate. Run it and read what comes back:
+# The second command-line agent, and the one that proves the shim is not an
+# adapter for a particular CLI: Codex names its own session where Claude Code
+# accepts one, and resuming is a subcommand rather than a flag. Neither
+# difference reaches this file, and neither needed a spec change.
 #
-#   oryxa-shim -agents shim.yaml
-#   oryxa check codex
+#   oryxa-shim -agents shim.yaml       # then: oryxa check codex
 #
-# `check` prints the first payload it saw, which is faster than reading release
-# notes. The three selectors below are tried in order and the first match wins,
-# so a wrong guess costs nothing as long as one of them is right.
+# The stream, in the order it arrives:
 #
-# If the agent answers the first message and then behaves as though every turn
-# is its first, the `capture` selector in shim.yaml missed the session id —
-# that is the shim's setting, not this file's.
+#   {"type":"thread.started","thread_id":"019ff0ca-…"}
+#   {"type":"turn.started"}
+#   {"type":"item.completed","item":{"type":"agent_message","text":"…"}}
+#   {"type":"turn.completed","usage":{…}}
+#
+# The gate is on the *item's* type, not the event's. `item.completed` is emitted
+# for reasoning and command execution too, and all of them carry text — without
+# the inner gate the room gets Codex's working notes as though they were its
+# answer.
+#
+# Codex writes MCP connection failures to stderr as plain text. Those arrive
+# wrapped by the shim and land as opaque activity, which is where they belong:
+# visible when a turn goes wrong, never mistaken for the reply.
 name: codex
 base: http://{{env.ORYXA_SHIM_HOST}}:8090
 timeout: 15m
@@ -39,10 +47,6 @@ turn:
   response:
     format: ndjson
     error: $.error
-    # Reasoning and tool activity share the stream with the answer. Without a
-    # gate the room gets the model's scratchpad as though it were the reply.
-    when: $.msg.type == agent_message
+    when: $.item.type == agent_message
     text:
-      - $.msg.message
       - $.item.text
-      - $.message
