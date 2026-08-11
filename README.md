@@ -195,21 +195,30 @@ oryxa serve                       # same shell, same variable
 Set on only one side, the server starts, every agent looks healthy, and every
 turn fails with a 401 that names neither end.
 
-> **The two shipped agents are deliberately asymmetric, and this is the line to
-> think about before copying them.** `claude-code` gets a read-only tool
-> allowlist — with no `Edit`, `Write` or `Bash`, no wording gets a file changed,
-> which is a stronger boundary than a permission mode because it cannot be
-> prompted around. `codex` gets `-s workspace-write` and **can write inside its
-> working directory**.
+> **Both shipped agents can write inside their working directory, and this is
+> the line to think about before copying them.** The reason is that read-only
+> made them worse colleagues than they needed to be: asked what was wrong with
+> this repo, Codex found a real crash in the event fan-out and could only report
+> it as a suspicion, because `go test` could not create its build directory.
+> Verifying is most of what a coding agent is for.
 >
-> One agent that can run the tests and one that cannot turns out to be a useful
-> pair: asked what was wrong with this repo, Codex found a real crash in the
-> event fan-out — and under read-only could only report it as a suspicion,
-> because `go test` could not create its build directory.
+> **They are confined differently, and the difference matters.** Codex is held
+> inside its workspace by the OS sandbox (`-s workspace-write`). Claude Code is
+> not — `dir:` only sets the working directory, so writes are scoped by
+> *path-patterned permissions* instead:
 >
-> The cost is that anyone who can reach that room can cause writes to that
-> directory. Point it at a checkout you can throw away. `-s read-only` puts it
-> back.
+> ```yaml
+> --allowedTools  Bash(go test:*) Bash(go build:*) Bash(go vet:*)
+>                 Edit(./**) Write(./**)
+> ```
+>
+> Without those patterns it will write anywhere it likes — verified: it created a
+> file in `/tmp` without objection. With them, the same request is refused. Its
+> shell is narrower than Codex's in exchange: it can run the project's build and
+> test commands and nothing else.
+>
+> The cost either way is that anyone who can reach that room can cause writes to
+> that directory. Point it at a checkout you can throw away.
 
 Two things change once an agent in the room can read a repository. Cancelling a
 turn now has to reach a *process*, so the shim kills the whole group rather than

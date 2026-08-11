@@ -37,7 +37,20 @@ agents:
       - stream-json
       - --verbose
       - --tools
-      - Read,Grep,Glob
+      - Read,Grep,Glob,Edit,Write,Bash
+      # --tools makes a tool exist; --allowedTools is what stops it asking. A
+      # tool that exists and is not allowed is denied outright in headless,
+      # which reads as an agent that will not try rather than one that cannot.
+      - --allowedTools
+      - Bash(go test:*)
+      - Bash(go build:*)
+      - Bash(go vet:*)
+      # Path-scoped, and this is the containment. Codex is held inside its
+      # workspace by the OS sandbox; Claude Code is not — `dir:` only sets the
+      # working directory, so an absolute path walks straight out of it.
+      # Verified: without these patterns it wrote to /tmp without objection.
+      - Edit(./**)
+      - Write(./**)
       - --session-id
       - "{{handle}}"
     resume:
@@ -47,7 +60,20 @@ agents:
       - stream-json
       - --verbose
       - --tools
-      - Read,Grep,Glob
+      - Read,Grep,Glob,Edit,Write,Bash
+      # --tools makes a tool exist; --allowedTools is what stops it asking. A
+      # tool that exists and is not allowed is denied outright in headless,
+      # which reads as an agent that will not try rather than one that cannot.
+      - --allowedTools
+      - Bash(go test:*)
+      - Bash(go build:*)
+      - Bash(go vet:*)
+      # Path-scoped, and this is the containment. Codex is held inside its
+      # workspace by the OS sandbox; Claude Code is not — `dir:` only sets the
+      # working directory, so an absolute path walks straight out of it.
+      # Verified: without these patterns it wrote to /tmp without objection.
+      - Edit(./**)
+      - Write(./**)
       - --resume
       - "{{handle}}"
 
