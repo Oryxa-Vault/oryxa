@@ -14,11 +14,10 @@ where someone left off. That's the job.
 costs its slowest agent rather than the sum of them. Recorded from a real
 session; the script that produces it is in [recording/](recording).*
 
-Status: **v0.4** — connectors, rooms, shared context agents can read and write,
-an event log everything is a fold over, live stream, viewer. New in this one:
-**command-line agents** (Claude Code and Codex, through a shim), **scoped
-rooms** — each carries a secret, so one token no longer opens all of them — and
-**turn budgets**.
+Status: **v0.5** — connectors, rooms, shared context agents can read and write,
+an event log everything is a fold over, live stream, viewer, command-line agents
+through a shim, scoped rooms and turn budgets. New in this one: **room keys**, so
+a name can be proved rather than claimed, and every message records which.
 
 > **Rooms are closed and names can be proved — but neither is on by default.**
 > Each room carries a secret, so one token no longer opens all of them; turns are
