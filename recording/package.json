@@ -1,0 +1,14 @@
+{
+  "name": "oryxa-recording",
+  "private": true,
+  "description": "Scripted, repeatable recording of a two-person Oryxa room.",
+  "type": "module",
+  "scripts": {
+    "record": "node demo.mjs",
+    "cut": "node ramp.mjs",
+    "all": "node demo.mjs && node ramp.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.50.0"
+  }
+}
