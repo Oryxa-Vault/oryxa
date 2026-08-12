@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/oryxa/oryxa/internal/connector"
+	"github.com/oryxa/oryxa/internal/events"
+	"github.com/oryxa/oryxa/internal/session"
 )
 
 // openRoom creates a room and returns its id and secret, deliberately without
@@ -273,5 +278,188 @@ func TestRoomIDFromPath(t *testing.T) {
 		if got := roomIDFromPath(path); got != want {
 			t.Errorf("roomIDFromPath(%q) = %q, want %q", path, got, want)
 		}
+	}
+}
+
+// mintKey issues a key bound to a name, using the room secret.
+func mintKey(t *testing.T, base, id, roomSecret, author string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"author": author})
+	req, _ := http.NewRequest("POST", base+"/v1/sessions/"+id+"/keys", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(SessionHeader, roomSecret)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if resp.StatusCode != 201 {
+		t.Fatalf("issuing a key returned %d: %v", resp.StatusCode, out)
+	}
+	key, _ := out["key"].(string)
+	if key == "" {
+		t.Fatalf("no key came back: %v", out)
+	}
+	return key
+}
+
+// speak posts a message with whatever credential and claimed author it is given,
+// and reports the author the room actually recorded.
+func speak(t *testing.T, base, id, credential, claimed string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"text": "hello", "author": claimed})
+	req, _ := http.NewRequest("POST", base+"/v1/sessions/"+id+"/input", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(SessionHeader, credential)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if resp.StatusCode != 202 {
+		t.Fatalf("input returned %d: %v", resp.StatusCode, out)
+	}
+	author, _ := out["author"].(string)
+	return author
+}
+
+// The gap this closes: an author was whatever a request said it was, so `-as
+// arsh` was a costume anyone could wear and every name in the log was a claim.
+func TestAKeyCannotBeWornUnderAnotherName(t *testing.T) {
+	srv := newOryxa(t)
+	registerStub(t, srv.URL)
+	id, roomSecret := openRoom(t, srv.URL)
+
+	priya := mintKey(t, srv.URL, id, roomSecret, "priya")
+
+	// The key decides, not the message. Claiming somebody else changes nothing.
+	if got := speak(t, srv.URL, id, priya, "arsh"); got != "priya" {
+		t.Errorf("a key issued for priya spoke as %q", got)
+	}
+	if got := speak(t, srv.URL, id, priya, ""); got != "priya" {
+		t.Errorf("with no claim at all the key spoke as %q", got)
+	}
+}
+
+// The room secret stays a bearer credential: it opens the room and says nothing
+// about who holds it, so a name presented with it is still only a claim. That is
+// how the owner and anything managing its own identity get in.
+func TestTheRoomSecretStillOnlyClaims(t *testing.T) {
+	srv := newOryxa(t)
+	registerStub(t, srv.URL)
+	id, roomSecret := openRoom(t, srv.URL)
+
+	if got := speak(t, srv.URL, id, roomSecret, "whoever"); got != "whoever" {
+		t.Errorf("author = %q, want the claim to stand", got)
+	}
+}
+
+// Two keys, two names, neither able to be the other.
+func TestTwoKeysStayDistinct(t *testing.T) {
+	srv := newOryxa(t)
+	registerStub(t, srv.URL)
+	id, roomSecret := openRoom(t, srv.URL)
+
+	priya := mintKey(t, srv.URL, id, roomSecret, "priya")
+	arsh := mintKey(t, srv.URL, id, roomSecret, "arsh")
+	if priya == arsh {
+		t.Fatal("two keys came back identical")
+	}
+	if got := speak(t, srv.URL, id, arsh, "priya"); got != "arsh" {
+		t.Errorf("arsh's key spoke as %q", got)
+	}
+}
+
+// A key opens its room and only its room, like every other credential here.
+func TestAKeyDoesNotOpenAnotherRoom(t *testing.T) {
+	srv := newOryxa(t)
+	registerStub(t, srv.URL)
+	idA, secretA := openRoom(t, srv.URL)
+	idB, _ := openRoom(t, srv.URL)
+
+	priya := mintKey(t, srv.URL, idA, secretA, "priya")
+
+	req, _ := http.NewRequest("GET", srv.URL+"/v1/sessions/"+idB, nil)
+	req.Header.Set(SessionHeader, priya)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("a key for room A opened room B: %d", resp.StatusCode)
+	}
+}
+
+// Issuing a key needs the room, so a stranger cannot mint themselves a name.
+func TestIssuingAKeyNeedsTheRoom(t *testing.T) {
+	srv := newOryxa(t)
+	registerStub(t, srv.URL)
+	id, _ := openRoom(t, srv.URL)
+
+	body, _ := json.Marshal(map[string]string{"author": "intruder"})
+	resp, err := http.Post(srv.URL+"/v1/sessions/"+id+"/keys", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("issuing without the room secret returned %d, want 404", resp.StatusCode)
+	}
+}
+
+// A key gets a stream cookie too. One that worked over HTTP and not over the
+// stream would be a key that works everywhere except the viewer.
+func TestAKeyCanJoinForTheStream(t *testing.T) {
+	srv := newOryxa(t)
+	registerStub(t, srv.URL)
+	id, roomSecret := openRoom(t, srv.URL)
+	priya := mintKey(t, srv.URL, id, roomSecret, "priya")
+
+	body, _ := json.Marshal(map[string]string{"secret": priya})
+	resp, err := http.Post(srv.URL+"/v1/sessions/"+id+"/join", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("join with a person key returned %d", resp.StatusCode)
+	}
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	// The name comes back so a viewer can stop offering a box to type one in.
+	if out["author"] != "priya" {
+		t.Errorf("join did not report who the key is: %v", out)
+	}
+}
+
+// The binding is only as durable as the log, and a restart must not turn a
+// settled identity back into a claim.
+func TestKeysSurviveARestart(t *testing.T) {
+	reg := connector.NewRegistry()
+	log := events.NewMemory()
+	exec := connector.NewExecutor()
+	mgr := session.NewManager(reg, exec, log)
+	srv := httptest.NewServer(New(reg, exec, mgr, log).WithPrivateAgents(true).Routes())
+	defer srv.Close()
+	registerStub(t, srv.URL)
+	id, roomSecret := openRoom(t, srv.URL)
+	priya := mintKey(t, srv.URL, id, roomSecret, "priya")
+
+	// Same log, a fresh manager — which is what a restart is.
+	fresh := session.NewManager(reg, exec, log)
+	if _, err := fresh.Rehydrate(); err != nil {
+		t.Fatal(err)
+	}
+	name, ok := fresh.Resolve(id, priya)
+	if !ok {
+		t.Fatal("the key stopped opening the room after a restart")
+	}
+	if name != "priya" {
+		t.Errorf("the key resolved to %q after a restart", name)
 	}
 }

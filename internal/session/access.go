@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"fmt"
 	"sort"
+	"strings"
 )
 
 // Access control for one room.
@@ -47,6 +49,84 @@ func newSecret() (secret string, hash string) {
 func hashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+// Resolve reports whether a secret opens a room, and who it says you are.
+//
+// Two kinds of credential come through the same door. The room secret is a
+// bearer key: it opens the room and says nothing about who is holding it, so a
+// caller presenting it still has to name themselves and the name is a claim. A
+// person key is bound to a name when it is issued, and presenting it *is* being
+// that person — the server stops reading the name from the request.
+//
+// That distinction is the whole of the identity fix, and it keeps the line this
+// project drew: Oryxa still does not establish who anyone is. Whoever runs the
+// room decides that this key is Priya, exactly as they decide who gets into the
+// room at all. Oryxa binds the two together and refuses to let one be used under
+// another's name.
+//
+// The empty name is not a failure. It means "opened by the room secret", which
+// is how the owner, the CLI and anything holding its own identity get in.
+func (m *Manager) Resolve(id, secret string) (name string, ok bool) {
+	m.mu.RLock()
+	s, found := m.sessions[id]
+	m.mu.RUnlock()
+	if !found || secret == "" {
+		return "", false
+	}
+
+	s.mu.Lock()
+	roomHash := s.secretHash
+	keys := make(map[string]string, len(s.keys))
+	for n, h := range s.keys {
+		keys[n] = h
+	}
+	s.mu.Unlock()
+
+	if roomHash == "" {
+		return "", false // predates scoping; see Unscoped
+	}
+	got := hashSecret(secret)
+	if subtle.ConstantTimeCompare([]byte(got), []byte(roomHash)) == 1 {
+		return "", true
+	}
+	// Every key is compared even after a match, so the time taken does not
+	// depend on which person's key was presented or how many exist.
+	var matched string
+	for n, h := range keys {
+		if subtle.ConstantTimeCompare([]byte(got), []byte(h)) == 1 {
+			matched = n
+		}
+	}
+	return matched, matched != ""
+}
+
+// IssueKey binds a name to a fresh key for this room and returns it once.
+//
+// Issued by whoever already holds the room, which is the only sensible root:
+// the same person deciding that someone may be in the room is deciding what to
+// call them. Reissuing for a name replaces the old key rather than adding a
+// second, so handing one out twice cannot leave two people answering to it.
+func (m *Manager) IssueKey(id, name string) (key, hash string, err error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", "", fmt.Errorf("a key has to be for somebody: name is required")
+	}
+	m.mu.RLock()
+	s, ok := m.sessions[id]
+	m.mu.RUnlock()
+	if !ok {
+		return "", "", ErrNoSession
+	}
+	key, hash = newSecret()
+
+	s.mu.Lock()
+	if s.keys == nil {
+		s.keys = map[string]string{}
+	}
+	s.keys[name] = hash
+	s.mu.Unlock()
+	return key, hash, nil
 }
 
 // Authorize reports whether a secret opens a session.
@@ -145,4 +225,15 @@ func (m *Manager) Participants(id string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// RecordInvite writes the binding to the log so it survives a restart.
+//
+// Only the hash. A room's own members can read its events, so the key itself
+// there would mean anyone who was ever in the room keeps a way in under someone
+// else's name.
+func (m *Manager) RecordInvite(id, by, author, hash string) {
+	m.emit(id, "participant.invited", by, "", map[string]any{
+		"author": author, "key_sha256": hash,
+	})
 }

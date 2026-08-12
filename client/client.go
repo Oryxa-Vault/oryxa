@@ -280,9 +280,27 @@ func (c *Client) Open(ctx context.Context, agents ...string) (*Session, error) {
 	return &out, nil
 }
 
-// Join records a room's secret, for a room somebody else opened. It is a local
-// act — nothing is sent — because the secret is the whole credential and the
-// server has no list of members to add you to.
+// IssueKey mints a room key bound to a name. Presenting that key *is* being that
+// person: the server takes the author from the key rather than from what a
+// request says, so it cannot be used to speak as somebody else.
+//
+// Needs the room's own secret, which is the right root — whoever decides someone
+// may be in the room decides what to call them. The key is returned once.
+func (c *Client) IssueKey(ctx context.Context, id, author string) (string, error) {
+	var out struct {
+		Author string `json:"author"`
+		Key    string `json:"key"`
+	}
+	if err := c.do(ctx, "POST", "/v1/sessions/"+id+"/keys",
+		map[string]string{"author": author}, &out); err != nil {
+		return "", err
+	}
+	return out.Key, nil
+}
+
+// Join records a room's secret or a person key, for a room somebody else
+// opened. It is a local act — nothing is sent — because the credential is the
+// whole of it and the server has no list of members to add you to.
 func (c *Client) Join(id, secret string) {
 	if id == "" || secret == "" {
 		return

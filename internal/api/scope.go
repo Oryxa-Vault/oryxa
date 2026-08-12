@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"fmt"
 	"net/http"
@@ -32,6 +33,17 @@ const (
 
 func sessionCookieName(id string) string { return sessionCookiePrefix + id }
 
+// boundNameKey carries the name a person key resolved to, from requireRoom to
+// whichever handler needs to know who is acting.
+type boundNameKey struct{}
+
+// boundName is who this request proved to be, or "" if it arrived on the room
+// secret and is therefore only claiming.
+func boundName(r *http.Request) string {
+	n, _ := r.Context().Value(boundNameKey{}).(string)
+	return n
+}
+
 // sessionSecret finds the secret on a request: header first, then the cookie
 // for this specific room.
 func sessionSecret(r *http.Request, id string) string {
@@ -60,7 +72,14 @@ func (s *Server) requireRoom(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if s.mgr.Authorize(id, sessionSecret(r, id)) {
+		if name, ok := s.mgr.Resolve(id, sessionSecret(r, id)); ok {
+			// Resolved once, here, and carried on the context. Every handler
+			// under this then gets the same answer without hashing the
+			// credential again — and, more to the point, without any of them
+			// being able to reach a different one.
+			if name != "" {
+				r = r.WithContext(context.WithValue(r.Context(), boundNameKey{}, name))
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -157,13 +176,51 @@ func (s *Server) joinRoom(w http.ResponseWriter, r *http.Request) {
 	if secret == "" {
 		secret = sessionSecret(r, id)
 	}
-	if !s.mgr.Authorize(id, secret) {
+	// Resolve rather than Authorize, so a person key gets a cookie too. A key
+	// that opens the room over HTTP and not over the stream would be a key that
+	// works everywhere except the viewer, which is where most people would use
+	// it.
+	name, ok := s.mgr.Resolve(id, secret)
+	if !ok {
 		writeErr(w, http.StatusNotFound, fmt.Errorf("no such session, or the wrong session secret"))
 		return
 	}
 
 	http.SetCookie(w, roomCookie(r, id, secret))
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "joined": true})
+	// The name comes back so the viewer can stop offering a box to type one in.
+	// Somebody whose identity is settled should not be shown a field implying
+	// it is theirs to choose.
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "joined": true, "author": name})
+}
+
+// issueKey mints a key bound to a name, for whoever already holds this room.
+//
+// Guarded by requireRoom like everything else beneath a session, which is the
+// right root: the person deciding somebody may be in the room is the person
+// deciding what to call them. Oryxa is not deciding who anyone is — it is
+// refusing to let a key be used under a name it was not issued for.
+func (s *Server) issueKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Author string `json:"author"`
+	}
+	_ = decodeJSONBody(r, &req)
+
+	key, hash, err := s.mgr.IssueKey(id, req.Author)
+	if err != nil {
+		writeErr(w, statusFor(err), err)
+		return
+	}
+	// Only the hash is written down, so a key cannot be recovered from the log
+	// by anyone who can read the room it belongs to.
+	who, _ := s.identify(r, "")
+	s.mgr.RecordInvite(id, who.Author, strings.TrimSpace(req.Author), hash)
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"session": id,
+		"author":  strings.TrimSpace(req.Author),
+		"key":     key,
+	})
 }
 
 // roomCookie carries one room's secret to the stream.

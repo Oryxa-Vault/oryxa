@@ -7,11 +7,30 @@ import "strings"
 // It exists separately from Turn because saying something and answering it are
 // different acts, and one input is no longer one turn: a message reaches every
 // lane, and a lane that was busy picks up several at once when it next speaks.
+// Author is who said something, and how much that name is worth.
+//
+// The two travel together because a name on its own is not evidence. "trusted"
+// came from a proxy that established it, "key" from a room key bound to it, and
+// "claimed" from someone typing it into a box. A log that recorded only the name
+// would invite everything downstream to treat those three the same.
+type Author struct {
+	Name   string
+	Source string // trusted | key | claimed
+}
+
+// Claimed is an unproven name — someone said this is who they are.
+func Claimed(name string) Author { return Author{Name: name, Source: "claimed"} }
+
 type Input struct {
 	ID     string `json:"id"`
 	Seq    int    `json:"seq"` // position in the room's inbox
 	Author string `json:"author"`
-	Text   string `json:"text"`
+
+	// How the author was established. Absent on inputs written before this
+	// existed, which is honest: it is not known rather than claimed.
+	Source string `json:"source,omitempty"`
+
+	Text string `json:"text"`
 
 	// To is who the sender named explicitly. Empty leaves it to the room's own
 	// rules, which is how most messages arrive.

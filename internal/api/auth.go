@@ -135,17 +135,34 @@ type Identity struct {
 
 // identify resolves who is acting. The bool is false when a trusted header is
 // required but absent — meaning the request did not come through the proxy.
+// Three sources, strongest first, and the order is the whole of it.
+//
+// A proxy that established identity outranks everything, because it answers a
+// question Oryxa deliberately never asks: who this person is in the world. A
+// person key outranks a claim, because someone who already held the room bound
+// that name to that key and the holder cannot use it under another name. A claim
+// is last and is only a claim — which is now a statement about one specific
+// case, a caller holding the room's bearer secret, rather than about everybody.
+//
+// What each is worth travels with it, in Source, because a log that records
+// names without recording how they were established invites everything
+// downstream to treat all three the same.
 func (s *Server) identify(r *http.Request, claimed string) (Identity, bool) {
-	if s.trustHeader == "" {
-		author := strings.TrimSpace(claimed)
-		if author == "" {
-			author = "anonymous"
+	if s.trustHeader != "" {
+		got := strings.TrimSpace(r.Header.Get(s.trustHeader))
+		if got == "" {
+			return Identity{}, false
 		}
-		return Identity{Author: author, Source: "claimed"}, true
+		return Identity{Author: got, Source: "trusted"}, true
 	}
-	got := strings.TrimSpace(r.Header.Get(s.trustHeader))
-	if got == "" {
-		return Identity{}, false
+	// The claim is not consulted. A key bound to priya cannot be used to speak
+	// as arsh, which is the entire point of having issued it.
+	if bound := boundName(r); bound != "" {
+		return Identity{Author: bound, Source: "key"}, true
 	}
-	return Identity{Author: got, Source: "trusted"}, true
+	author := strings.TrimSpace(claimed)
+	if author == "" {
+		author = "anonymous"
+	}
+	return Identity{Author: author, Source: "claimed"}, true
 }

@@ -207,6 +207,48 @@ func cmdReplay(args []string) {
 	fmt.Println()
 }
 
+// ---- keys ----
+
+// cmdKey issues a room key bound to a name.
+//
+// The point of it: without one, an author is whatever a request says it is, so
+// `-as arsh` is a costume anyone can wear. With one, the name travels with the
+// credential and the server stops reading it from the message.
+func cmdKey(args []string) {
+	fs := flag.NewFlagSet("key", flag.ExitOnError)
+	server, token, asJSON := serverFlags(fs)
+
+	pos := parseArgs(fs, args)
+	if len(pos) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: oryxa key <session> <name>")
+		fmt.Fprintln(os.Stderr, "\n  issues a key that speaks as <name>. Needs the room secret,")
+		fmt.Fprintln(os.Stderr, "  which this machine already has if it opened the room.")
+		os.Exit(2)
+	}
+	sid, author := pos[0], pos[1]
+
+	var out struct {
+		Author string `json:"author"`
+		Key    string `json:"key"`
+	}
+	c := newClient(*server, *token)
+	fail(c.do("POST", "/v1/sessions/"+sid+"/keys", map[string]string{"author": author}, &out))
+
+	if *asJSON {
+		printJSON(out)
+		return
+	}
+	fmt.Printf("\n  a key for %s\n\n", out.Author)
+	fmt.Printf("  %s\n\n", out.Key)
+	fmt.Printf("  they use it with:\n")
+	fmt.Printf("    oryxa tail %s -secret %s\n\n", sid, out.Key)
+	// Said plainly, because the failure is silent: a key handed to two people
+	// makes two people indistinguishable in the log, which is the one thing it
+	// was issued to prevent.
+	fmt.Printf("  shown once. One key per person — sharing one puts two people\n")
+	fmt.Printf("  behind one name, which is what this exists to stop.\n\n")
+}
+
 // ---- context ----
 
 func cmdContext(args []string) {
