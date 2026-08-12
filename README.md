@@ -8,12 +8,19 @@ where someone left off. That's the job.
 
 > To the framework, Oryxa is one user. To your team, it's a shared room.
 
+![Two agents answering one question at once](docs/media/room.gif)
+
+*One question, two agents from rival labs, answering at the same time — the room
+costs its slowest agent rather than the sum of them. Recorded from a real
+session; the script that produces it is in [recording/](recording).*
+
 Status: **v0.3** — connectors, rooms, shared context agents can read and write,
 an event log everything is a fold over, live stream, viewer.
 
-> **Run it locally, not on the open internet.** Rooms are scoped now — each
-> carries a secret and one token no longer opens all of them — but identity is
-> still self-declared without a proxy, and nothing rate-limits a turn. See
+> **Run it locally, not on the open internet.** Rooms are scoped — each carries
+> a secret, and one token no longer opens all of them — and turns are budgeted
+> per room and per server. What is still open: identity is self-declared unless
+> a proxy establishes it, so a name is a claim rather than a fact. See
 > [SECURITY.md](SECURITY.md).
 
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)

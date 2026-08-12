@@ -43,3 +43,9 @@ docker-compose.override.yml
 
 # Local demo rig: connector sets and the switcher for recordings.
 /demo/
+
+# Recording rig: the scripts are tracked, the footage is not. Raw takes are tens
+# of megabytes per run and the cut is rebuildable from them.
+recording/node_modules/
+recording/out/
+recording/final/
