@@ -43,13 +43,13 @@ func TestMessagesDuringATurnBecomeOneTurn(t *testing.T) {
 	m, _ := setup(t, spec("a", a))
 	id := room(t, m, "a")
 
-	if _, err := m.Submit(id, "alice", "first"); err != nil {
+	if _, err := m.Submit(id, Claimed("alice"), "first"); err != nil {
 		t.Fatal(err)
 	}
 	waitPrompts(t, a, 1) // the lane is now inside a turn
 
 	for i, msg := range []string{"two", "three", "four", "five", "six"} {
-		if _, err := m.Submit(id, fmt.Sprintf("p%d", i), msg); err != nil {
+		if _, err := m.Submit(id, Claimed(fmt.Sprintf("p%d", i)), msg); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -113,7 +113,7 @@ func TestLanesCoalesceIndependently(t *testing.T) {
 	m, _ := setup(t, spec("slow", slow), spec("fast", fast))
 	id := room(t, m, "slow", "fast")
 
-	if _, err := m.Submit(id, "alice", "one"); err != nil {
+	if _, err := m.Submit(id, Claimed("alice"), "one"); err != nil {
 		t.Fatal(err)
 	}
 	waitPrompts(t, slow, 1)
@@ -122,7 +122,7 @@ func TestLanesCoalesceIndependently(t *testing.T) {
 	// One at a time, each waited for: otherwise the fast lane might coalesce
 	// these too, which would be correct behaviour and a flaky test.
 	for i, msg := range []string{"two", "three"} {
-		if _, err := m.Submit(id, "alice", msg); err != nil {
+		if _, err := m.Submit(id, Claimed("alice"), msg); err != nil {
 			t.Fatal(err)
 		}
 		waitPrompts(t, fast, i+2)
@@ -153,16 +153,16 @@ func TestWithdrawnInputIsNeverRead(t *testing.T) {
 	m, _ := setup(t, spec("a", a))
 	id := room(t, m, "a")
 
-	if _, err := m.Submit(id, "alice", "opening"); err != nil {
+	if _, err := m.Submit(id, Claimed("alice"), "opening"); err != nil {
 		t.Fatal(err)
 	}
 	waitPrompts(t, a, 1)
 
-	regret, err := m.Submit(id, "alice", "IGNORE ME")
+	regret, err := m.Submit(id, Claimed("alice"), "IGNORE ME")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Submit(id, "alice", "keep this"); err != nil {
+	if _, err := m.Submit(id, Claimed("alice"), "keep this"); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Withdraw(id, regret.ID, "alice"); err != nil {
@@ -186,12 +186,12 @@ func TestWithdrawKeepsInboxPositionsStable(t *testing.T) {
 	m, _ := setup(t, spec("a", a))
 	id := room(t, m, "a")
 
-	one, _ := m.Submit(id, "alice", "one")
-	two, _ := m.Submit(id, "alice", "two")
+	one, _ := m.Submit(id, Claimed("alice"), "one")
+	two, _ := m.Submit(id, Claimed("alice"), "two")
 	if err := m.Withdraw(id, one.ID, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	three, _ := m.Submit(id, "alice", "three")
+	three, _ := m.Submit(id, Claimed("alice"), "three")
 
 	if one.Seq != 0 || two.Seq != 1 || three.Seq != 2 {
 		t.Fatalf("positions shifted: %d %d %d", one.Seq, two.Seq, three.Seq)
@@ -205,7 +205,7 @@ func TestWithdrawAfterReadingIsRefused(t *testing.T) {
 	m, _ := setup(t, spec("a", a))
 	id := room(t, m, "a")
 
-	in, _ := m.Submit(id, "alice", "already answered")
+	in, _ := m.Submit(id, Claimed("alice"), "already answered")
 	waitTurns(t, m, id, 1)
 
 	// Still withdrawable as a record — but the answer stands.
@@ -263,9 +263,9 @@ func TestWhatWasSaidWhileBusyIsReadNext(t *testing.T) {
 	m, _ := setup(t, spec("a", a))
 	id := room(t, m, "a")
 
-	m.Submit(id, "alice", "opening")
+	m.Submit(id, Claimed("alice"), "opening")
 	waitPrompts(t, a, 1)
-	m.Submit(id, "bob", "a thing said while it was busy")
+	m.Submit(id, Claimed("bob"), "a thing said while it was busy")
 
 	v, _ := m.View(id)
 	if len(v.Waiting) != 1 || v.Waiting[0].Text != "a thing said while it was busy" {

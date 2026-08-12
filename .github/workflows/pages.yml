@@ -1,0 +1,58 @@
+# Publishes site/ to GitHub Pages.
+#
+# The recording lives once, in docs/media/, because the README points at it there
+# and a second copy in site/ would be the one that goes stale. It is copied into
+# the build output instead.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/media/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A queued run should wait for the one in flight rather than cancel it: a
+# half-published site is worse than a late one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/media
+          cp -R site/. _site/
+          cp docs/media/room.gif _site/media/room.gif
+
+      - name: Check the page references files that exist
+        run: |
+          for f in og.png media/room.gif; do
+            test -f "_site/$f" || { echo "missing: $f"; exit 1; }
+          done
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

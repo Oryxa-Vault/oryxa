@@ -159,7 +159,7 @@ func waitTurns(t *testing.T, m *Manager, id string, n int) []Turn {
 
 func ask(t *testing.T, m *Manager, id, text string, wantTurns int) {
 	t.Helper()
-	if _, err := m.Submit(id, "alice", text); err != nil {
+	if _, err := m.Submit(id, Claimed("alice"), text); err != nil {
 		t.Fatal(err)
 	}
 	waitTurns(t, m, id, wantTurns)
@@ -302,7 +302,7 @@ func TestContextIsSnapshotAtTurnStart(t *testing.T) {
 	)
 	id := room(t, m, "slow", "fast")
 
-	if _, err := m.Submit(id, "alice", "go"); err != nil {
+	if _, err := m.Submit(id, Claimed("alice"), "go"); err != nil {
 		t.Fatal(err)
 	}
 	waitTurns(t, m, id, 1) // the fast lane finished and its rule has been applied
@@ -500,7 +500,7 @@ func TestCancelledTurnWritesNothing(t *testing.T) {
 	m, _ := setup(t, spec("a", a, connector.ContextRule{Key: "findings", From: connector.SourceText}))
 	id := room(t, m, "a")
 
-	if _, err := m.Submit(id, "alice", "go"); err != nil {
+	if _, err := m.Submit(id, Claimed("alice"), "go"); err != nil {
 		t.Fatal(err)
 	}
 	waitStarted()
@@ -717,7 +717,7 @@ func TestSubmitReturnsAStableTurn(t *testing.T) {
 
 	const n = 50
 	for i := 0; i < n; i++ {
-		got, err := m.Submit(id, "alice", "go")
+		got, err := m.Submit(id, Claimed("alice"), "go")
 		if err != nil {
 			t.Fatal(err)
 		}

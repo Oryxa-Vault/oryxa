@@ -76,6 +76,10 @@ type session struct {
 	// is returned once, at creation, and never stored anywhere.
 	secretHash string
 
+	// Per-person keys, name -> hash. Presenting one of these is being that
+	// person: the name stops being something the request asserts.
+	keys map[string]string
+
 	mu    sync.Mutex
 	state State
 
@@ -320,7 +324,7 @@ func (m *Manager) View(id string) (View, bool) {
 // Submit queues input. Anyone in the room may send; the author travels with it.
 // One input becomes one turn per agent — everyone in the room asked everyone in
 // the room — and each lands in that agent's own lane.
-func (m *Manager) Submit(id, author, text string, to ...string) (Input, error) {
+func (m *Manager) Submit(id string, by Author, text string, to ...string) (Input, error) {
 	s, ok := m.get(id)
 	if !ok {
 		return Input{}, ErrNoSession
@@ -342,14 +346,15 @@ func (m *Manager) Submit(id, author, text string, to ...string) (Input, error) {
 	if s.speakers == nil {
 		s.speakers = map[string]bool{}
 	}
-	s.speakers[author] = true
+	s.speakers[by.Name] = true
 	// Decided once, when the message lands, so every lane and every replay agree
 	// on who it was for — and so the room can show why an agent stayed quiet.
 	w := decideWake(text, to, agents, m.reg, s.speakers)
 	in := Input{
 		ID:     "in_" + randHex(6),
 		Seq:    len(s.inbox),
-		Author: author,
+		Author: by.Name,
+		Source: by.Source,
 		Text:   text,
 		To:     to,
 		Wake:   w.Agents,
@@ -358,9 +363,12 @@ func (m *Manager) Submit(id, author, text string, to ...string) (Input, error) {
 	s.inbox = append(s.inbox, in)
 	s.imu.Unlock()
 
-	m.emit(s.id, "input.submitted", author, in.ID, map[string]any{
+	m.emit(s.id, "input.submitted", by.Name, in.ID, map[string]any{
 		"text": text, "seq": in.Seq, "group": in.ID,
 		"wake": w.Agents, "why": w.Why,
+		// Recorded beside the name, because the name alone does not say whether
+		// anyone checked it.
+		"source": by.Source,
 	})
 	for _, l := range s.allLanes() {
 		l.nudge()
@@ -755,19 +763,21 @@ func rebuild(id string, evs []events.Event) *session {
 
 	for _, ev := range evs {
 		var d struct {
-			Agent  string   `json:"agent"`
-			Agents []string `json:"agents"`
-			Handle string   `json:"handle"`
-			Text   string   `json:"text"`
-			Group  string   `json:"group"`
-			Inputs []string `json:"inputs"`
-			Wake   []string `json:"wake"`
-			Why    string   `json:"why"`
-			Error  string   `json:"error"`
-			Kind   string   `json:"kind"`
-			Key    string   `json:"key"`
-			Value  string   `json:"value"`
-			Secret string   `json:"secret_sha256"`
+			Agent   string   `json:"agent"`
+			Agents  []string `json:"agents"`
+			Handle  string   `json:"handle"`
+			Text    string   `json:"text"`
+			Group   string   `json:"group"`
+			Inputs  []string `json:"inputs"`
+			Wake    []string `json:"wake"`
+			Why     string   `json:"why"`
+			Error   string   `json:"error"`
+			Kind    string   `json:"kind"`
+			Key     string   `json:"key"`
+			Value   string   `json:"value"`
+			Secret  string   `json:"secret_sha256"`
+			Author  string   `json:"author"`
+			KeyHash string   `json:"key_sha256"`
 		}
 		if len(ev.Data) > 0 {
 			_ = json.Unmarshal(ev.Data, &d)
@@ -794,6 +804,15 @@ func rebuild(id string, evs []events.Event) *session {
 				if l := s.lanes[d.Agent]; l != nil {
 					l.handle, l.opened = d.Handle, true
 				}
+			}
+		case "participant.invited":
+			// Only the hash was ever written down, so a restart restores the
+			// binding without the key itself ever having been stored.
+			if d.Author != "" && d.KeyHash != "" {
+				if s.keys == nil {
+					s.keys = map[string]string{}
+				}
+				s.keys[d.Author] = d.KeyHash
 			}
 		case "session.closed":
 			s.state = StateClosed

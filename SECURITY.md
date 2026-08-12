@@ -2,13 +2,36 @@
 
 ## Current posture — read this before deploying
 
-**Oryxa is not ready to be exposed to a network you don't control.** This isn't a
-disclaimer; it's a specific, known gap:
+**Rooms are closed and names can be proved. What is left is that neither is on
+by default**, so a server started with no flags and no keys is still a laptop
+tool, and one started deliberately is not.
 
-- **Identity comes from the edge.** Oryxa trusts an author header supplied by a
-  proxy in front of it (`ORYXA_TRUST_HEADER`). Without that proxy, callers assert
-  their own identity. Names in the log are claims, and anything that reads them —
-  who spoke, who a message was for — is only as good as that source.
+### How much a name is worth
+
+Three ways an author is established, strongest first, and every message records
+which one it was — in `source` on `input.submitted`, so a reader never has to
+assume they are equivalent.
+
+| `source` | established by | worth |
+|---|---|---|
+| `trusted` | a proxy in front of Oryxa (`ORYXA_TRUST_HEADER`) | as much as your SSO |
+| `key` | a room key bound to that name | unforgeable inside that room |
+| `claimed` | somebody typing it | nothing |
+
+**Room keys are the fix for identity, and they keep the line this project drew.**
+Oryxa still does not establish who anyone is — `POST /v1/sessions/{id}/keys`
+mints a key bound to a name, and presenting it *is* being that person, because
+the server stops reading the name from the request. Whoever holds the room
+decides that this key is Priya, exactly as they decide who gets in at all. A key
+issued for one name cannot be used under another, and it opens no other room.
+
+What that does **not** do: the room secret stays a bearer credential. Whoever
+holds it can still claim any name, because they are the root that issues keys —
+that is the design, not a hole, and it is why the room secret belongs with whoever
+runs the room rather than with everyone in it. Hand out keys, not the secret.
+
+And a room where nobody issued keys behaves exactly as before: every name is
+`claimed`, which the log now says out loud instead of leaving you to assume.
 ### Turn budgets
 
 A turn is an agent doing work — a model call at best, and behind a command-line

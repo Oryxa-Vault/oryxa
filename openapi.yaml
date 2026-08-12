@@ -296,6 +296,47 @@ paths:
         "200": { description: Joined; the cookie is set. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/sessions/{id}/keys:
+    parameters: [{ $ref: "#/components/parameters/SessionID" }]
+    post:
+      tags: [sessions]
+      summary: Issue a key bound to a name.
+      description: >
+        Returns a room key that carries a name. Presenting it *is* being that
+        person: the author on every later request is taken from the key rather
+        than from the body, so a key issued for one name cannot be used under
+        another. Requires the room secret, which is the right root — whoever
+        decides somebody may be in the room decides what to call them. Oryxa
+        still does not establish who anyone is; it binds a name to a credential
+        and refuses to let the two come apart. Shown once. Reissuing for a name
+        replaces the previous key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [author]
+              properties:
+                author:
+                  type: string
+                  description: The name this key speaks as.
+      responses:
+        "201":
+          description: Issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { type: string }
+                  author:  { type: string }
+                  key:
+                    type: string
+                    description: Shown once; not recoverable afterwards.
+        "400": { $ref: "#/components/responses/Invalid" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/sessions/{id}/cancel:
     parameters: [{ $ref: "#/components/parameters/SessionID" }]
     post:

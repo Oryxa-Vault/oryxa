@@ -20,11 +20,13 @@ an event log everything is a fold over, live stream, viewer. New in this one:
 rooms** — each carries a secret, so one token no longer opens all of them — and
 **turn budgets**.
 
-> **Run it locally, not on the open internet.** Rooms are scoped — each carries
-> a secret, and one token no longer opens all of them — and turns are budgeted
-> per room and per server. What is still open: identity is self-declared unless
-> a proxy establishes it, so a name is a claim rather than a fact. See
-> [SECURITY.md](SECURITY.md).
+> **Rooms are closed and names can be proved — but neither is on by default.**
+> Each room carries a secret, so one token no longer opens all of them; turns are
+> budgeted per room and per server; and `oryxa key <room> <name>` issues a key
+> bound to a name, which the holder cannot use under any other. Every message
+> records how its author was established — `trusted`, `key` or `claimed` — so a
+> name never has to be taken on faith. Started with no flags and no keys, it is
+> still a laptop tool. See [SECURITY.md](SECURITY.md).
 
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.22%2B-00ADD8.svg)](go.mod)

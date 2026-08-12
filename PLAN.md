@@ -251,10 +251,21 @@ answer), and one agent failing without taking the room down.
 | **Hash chaining** | events are ordered and attributed but not tamper-evident. Chaining each event to its predecessor's hash would make the log verifiable rather than merely durable — worth having before anyone treats it as an audit record. |
 | **Usage accounting** | `turn.started` records what the *room* cost a prompt in characters, which is a different thing from what the *model* charged. No event carries token counts, so cost per turn cannot be derived from the log. |
 
-Identity is now the one that blocks real use: without a proxy in front, authors
-are claims, so everything derived from a name — who spoke, who a message was for
-— is only as good as that. Participants is still the one the most other things
-wait on, see §7, and it is the same gap seen from the other side.
+Identity came off this list the same way read scoping did, and by the same move.
+A room key is bound to a name when it is issued, so presenting it *is* being that
+person and the server stops reading the name from the request. Oryxa still does
+not establish who anyone is — whoever holds the room decides that this key is
+Priya, exactly as they decide who gets in at all. What was left was to say how
+much a name is worth, and every message now records it: `trusted`, `key` or
+`claimed`.
+
+Twice now the answer to "we need identity before we can do X" has been a
+capability rather than an identity. Worth noticing as a pattern before reaching
+for accounts a third time: the thing that was actually wanted was an unforgeable
+handle, and a name only ever looked like one.
+
+Participants is still the one the most other things wait on, see §7 — but it is
+owner-waking and directed output waiting now, not access control.
 
 Read scoping came off this list by going around it. §7's order had participants
 first *because* scoping waited on them; it turned out scoping did not want them.

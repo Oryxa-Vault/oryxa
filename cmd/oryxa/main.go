@@ -80,6 +80,8 @@ func main() {
 		cmdReplay(args)
 	case "context":
 		cmdContext(args)
+	case "key":
+		cmdKey(args)
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
@@ -139,6 +141,7 @@ Rooms                                         (talk to a running server)
   replay <session>      print the history
   sessions              list sessions
   context <session>     read or write shared context
+  key <session> NAME    issue a key that speaks as NAME
 
 Other
   version               print the version

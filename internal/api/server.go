@@ -88,6 +88,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/sessions", s.createSession)
 	mux.HandleFunc("GET /v1/sessions", s.listSessions)
 	mux.HandleFunc("POST /v1/sessions/{id}/join", s.joinRoom)
+	mux.HandleFunc("POST /v1/sessions/{id}/keys", s.issueKey)
 	mux.HandleFunc("GET /v1/sessions/{id}", s.getSession)
 	mux.HandleFunc("POST /v1/sessions/{id}/input", s.submitInput)
 	mux.HandleFunc("DELETE /v1/sessions/{id}/input/{tid}", s.withdrawInput)
@@ -325,7 +326,7 @@ func (s *Server) submitInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	in, err := s.mgr.Submit(id, who.Author, req.Text, req.To...)
+	in, err := s.mgr.Submit(id, session.Author{Name: who.Author, Source: who.Source}, req.Text, req.To...)
 	if err != nil {
 		writeErr(w, statusFor(err), err)
 		return

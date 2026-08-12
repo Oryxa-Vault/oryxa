@@ -1,0 +1,34 @@
+<!-- Authored on a 1200x1200 canvas with the card in the centre 630 band, because
+     qlmanage renders to a square and the centre crop must land exactly. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <rect width="1200" height="1200" fill="#0b0f10"/>
+
+  <!-- hairline frame, echoing the viewer's panels -->
+  <rect x="56" y="341" width="1088" height="518" fill="none" stroke="#232c2e" stroke-width="2"/>
+
+  <!-- wordmark -->
+  <text x="104" y="431" fill="#3ddc97" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="26" font-weight="700" letter-spacing="9">ORYXA</text>
+
+  <!-- headline -->
+  <text x="104" y="557" fill="#f2f7f5" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="56" font-weight="700">Agent frameworks</text>
+  <text x="104" y="625" fill="#f2f7f5" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="56" font-weight="700">are single-user.</text>
+  <text x="104" y="700" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="52" font-weight="400">Oryxa makes them multi-user.</text>
+
+  <!-- agent lanes -->
+  <circle cx="112" cy="787" r="7" fill="#3ddc97"/>
+  <text x="132" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="21">analyst</text>
+  <circle cx="268" cy="787" r="7" fill="#a78bfa"/>
+  <text x="288" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="21">cfo</text>
+  <circle cx="376" cy="787" r="7" fill="#fbbf24"/>
+  <text x="396" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="21">comms</text>
+
+  <text x="1096" y="794" fill="#5b6664" text-anchor="end"
+        font-family="ui-monospace, SF Mono, Menlo, monospace" font-size="21">Apache 2.0 · Go</text>
+</svg>
