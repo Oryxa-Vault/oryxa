@@ -1,18 +1,30 @@
 # Oryxa
 
-**Agent frameworks are single-user. Oryxa makes them multi-user.**
+**Multiplayer AI — many people and many agents in one room, live.**
 
-LangGraph, CrewAI and ADK already do multi-agent well. None of them let several
-people share one agent session — watch it live, add input, hand off, pick up
-where someone left off. That's the job.
+Your Claude Code session and your colleague's Codex session are two private
+terminals that will never know about each other. Oryxa puts them in the same
+room, on the same question, in front of the same people. Neither CLI was
+modified, and neither knows the other is there.
+
+Every agent framework assumes one caller: one session, one prompt, one reply,
+one person holding the terminal. AI is single-player by construction. Oryxa is
+the layer that makes it multiplayer — and nothing else. Your prompts, tools,
+memory and multi-agent orchestration stay exactly where they are.
 
 > To the framework, Oryxa is one user. To your team, it's a shared room.
 
-![Two agents answering one question at once](docs/media/room.gif)
+![Claude Code and Codex answering one question at once, watched by two people](docs/media/room.gif)
 
-*One question, two agents from rival labs, answering at the same time — the room
-costs its slowest agent rather than the sum of them. Recorded from a real
-session; the script that produces it is in [recording/](recording).*
+*Claude Code and Codex — rival labs, two separate CLIs — answering one question
+at the same time, watched by two people in two browsers. The room costs its
+slowest agent rather than the sum of them. Recorded from a real session; the
+script that produces it is in [recording/](recording), so it is re-run after a
+change rather than performed again by hand.*
+
+**The core is open source.** Apache 2.0, Go, one binary — the room, the event
+log, the connector engine, the shim, the viewer. Not a hosted product with a
+repo attached: `docker compose up` is the whole thing.
 
 Status: **v0.5** — connectors, rooms, shared context agents can read and write,
 an event log everything is a fold over, live stream, viewer, command-line agents
@@ -28,7 +40,7 @@ a name can be proved rather than claimed, and every message records which.
 > still a laptop tool. See [SECURITY.md](SECURITY.md).
 
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/go-1.22%2B-00ADD8.svg)](go.mod)
+[![Go](https://img.shields.io/badge/go-1.25%2B-00ADD8.svg)](go.mod)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 ---
@@ -57,6 +69,22 @@ framework we haven't tested — that's one YAML file, no Go required. See
 
 **To see it as two people:** open the viewer in a second tab and change the name
 in the composer. Both tabs are in the same room, watching the same agent.
+
+**To put Claude Code and Codex in one room** — the shot at the top of this page,
+on your own machine. Both CLIs are already installed and signed in; the shim
+gives them an HTTP surface and then they are ordinary connectors:
+
+```bash
+export ORYXA_SHIM_TOKEN=$(openssl rand -hex 32)
+oryxa-shim -agents shim.yaml &     # same shell, same variable
+oryxa serve &
+oryxa open claude-code codex
+```
+
+Ask the room one question and both answer, in parallel lanes, from their own
+sessions. Read [Command-line agents](#command-line-agents) before you point this
+at a repository you care about — **both agents can write inside their working
+directory**, and they are confined by different mechanisms.
 
 **Several agents in one room:** click more than one agent before creating the
 session. Each gets its own lane: its own cursor into what the room has said, its
@@ -589,14 +617,31 @@ go test -race ./...
 
 ## Not built yet
 
-**Read scoping** is the one that blocks real use: one token opens every session
-and there is no participant concept anywhere, which makes this laptop-safe
-rather than deployable.
+**Participants** is the one most other things wait on: agents have no owners,
+and the room's idea of who is in it is still "everyone who has spoken". That
+leaves one visible hole — someone addressed *before* they have said anything is
+not recognised, so the message reaches every agent instead. Harmless and
+self-correcting, and participants closes it properly.
 
-Behind it — agents write to shared context when a turn finishes, not during one;
-nothing summarises a room's older findings once the render bound stops showing
-them; no presence (who's here, who's typing); and events carry neither a hash
-chain nor model token usage.
+Behind it:
+
+- **Concurrency cap** — turns are bounded per minute but not in flight at once.
+  A burst inside the budget can still start more agents at once than a machine
+  wants to run. A load question rather than a spend one.
+- **Mid-turn writes** — context rules apply when a turn finishes. An agent that
+  wants to publish a finding *while* still working needs a callback;
+  `{{callback_url}}` exists in the template context but nothing populates it.
+- **Presence** — who is here, who is typing.
+- **Hash chaining** — events are ordered and attributed but not tamper-evident.
+  Worth having before anyone treats the log as an audit record.
+- **Usage accounting** — no event carries token counts, so cost per turn cannot
+  be derived from the log.
+
+Read scoping and identity both came off this list, and by the same move: a
+capability rather than an account. A room key is bound to a name when it is
+issued, so presenting it *is* being that person. Oryxa still never establishes
+who anyone is — whoever holds the room decides that this key is Priya, exactly
+as they decide who gets in at all.
 
 [`PLAN.md`](PLAN.md) is the source of truth and carries the same list with the
 reasoning for each; design docs are in `design/`.
@@ -616,28 +661,7 @@ real work to us: it tells us exactly where the docs are wrong.
 written against the handlers rather than from memory. A test compares it to the
 registered routes in both directions, so it cannot drift into being almost right.
 
-**A Go client**, if you want one:
-
-```go
-import "github.com/oryxa/oryxa/client"
-
-c := client.New("http://localhost:8080")
-room, _ := c.Open(ctx, "langgraph", "adk")
-in, _ := c.Say(ctx, room.ID, "alice", "what should we do about the budget")
-// in.Wake and in.Why record who it reached, and on what grounds
-c.Stream(ctx, room.ID, 0, func(ev client.Event) bool { … })
-```
-
-Nothing requires it. The HTTP API is the contract and any language can call it;
-this exists so a Go service does not write the same twenty request shapes again.
-
-### The contract, and a client
-
-[`openapi.yaml`](openapi.yaml) is the HTTP contract — every route, every shape,
-written against the handlers rather than from memory. A test fails if the code
-and the file disagree, in either direction.
-
-For Go, [`client/`](client/) wraps it:
+**A Go client**, if you want one — [`client/`](client/) wraps `/v1`:
 
 ```go
 c := client.New("http://localhost:8080")

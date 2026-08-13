@@ -4,22 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Oryxa — many people, many agents, one room</title>
-<meta name="description" content="Agent frameworks are single-user. Oryxa makes them multi-user — shared rooms with live streaming, an append-only event log, and declarative connectors for any HTTP agent.">
+<title>Oryxa — multiplayer AI: many people, many agents, one room</title>
+<meta name="description" content="Multiplayer AI. Put Claude Code and Codex in one room, on one question, watched by your whole team — live streaming, an append-only event log, and declarative connectors for any agent. Apache 2.0, Go.">
 <link rel="canonical" href="https://oryxa-vault.github.io/oryxa/">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Oryxa">
-<meta property="og:title" content="Oryxa — many people, many agents, one room">
-<meta property="og:description" content="Agent frameworks are single-user. Oryxa makes them multi-user — shared rooms with live streaming, an append-only event log, and declarative connectors for any HTTP agent.">
+<meta property="og:title" content="Oryxa — multiplayer AI: many people, many agents, one room">
+<meta property="og:description" content="Put Claude Code and Codex in one room, on one question, watched by your whole team. Neither CLI modified, neither knows the other is there. Apache 2.0, Go.">
 <meta property="og:url" content="https://oryxa-vault.github.io/oryxa/">
 <meta property="og:image" content="https://oryxa-vault.github.io/oryxa/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Oryxa — many people, many agents, one room">
-<meta name="twitter:description" content="Agent frameworks are single-user. Oryxa makes them multi-user.">
+<meta name="twitter:title" content="Oryxa — multiplayer AI: many people, many agents, one room">
+<meta name="twitter:description" content="Put Claude Code and Codex in one room, on one question, watched by your whole team. Apache 2.0, Go.">
 <meta name="twitter:image" content="https://oryxa-vault.github.io/oryxa/og.png">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0f10'/%3E%3Crect x='3' y='3' width='10' height='10' fill='%233ddc97'/%3E%3C/svg%3E">
@@ -268,18 +268,19 @@
 
   <header class="masthead">
     <span class="wordmark">Oryxa</span>
-    <span class="tagline">many people, many agents, one room</span>
+    <span class="tagline">multiplayer AI — many people, many agents, one room</span>
     <span class="spacer"></span>
-    <span class="meta">v0.4 · Apache 2.0 · Go</span>
+    <span class="meta">v0.5 · Apache 2.0 · Go</span>
   </header>
 
   <div class="hero">
-    <h1>Agent frameworks are single-user.<span class="quiet">Oryxa makes them multi-user.</span></h1>
+    <h1>AI is single-player.<span class="quiet">Oryxa makes it multiplayer.</span></h1>
 
     <p class="standfirst">
-      LangGraph, CrewAI and ADK already do multi-agent well. None of them let several people
-      share one agent session — watch it live, add input, hand off, pick up where someone left
-      off. <strong>That's the job.</strong>
+      Your Claude Code session and your colleague's Codex session are two private terminals
+      that will never know about each other. Oryxa puts them in the same room, on the same
+      question, in front of the same people. <strong>Neither CLI was modified, and neither
+      knows the other is there.</strong>
     </p>
 
     <div class="actions">
@@ -290,11 +291,12 @@
 
     <figure class="shot">
       <img src="media/room.gif" width="880" height="394"
-           alt="Two browser panes side by side, each a different person, watching the same Oryxa room while two agents answer one question at the same time">
+           alt="Two browser panes side by side, each a different person, watching the same Oryxa room while Claude Code and Codex answer one question at the same time">
       <figcaption>
-        One question, two agents from rival labs, answering at the same time — the room costs
-        its slowest agent rather than the sum of them. Two panes, two people, two separate
-        streams. Recorded from a real session; the script that produces it is in the repo.
+        Claude Code and Codex — rival labs, two separate CLIs — answering one question at the
+        same time, watched by two people in two browsers. The room costs its slowest agent
+        rather than the sum of them. Recorded from a real session; the script that produces it
+        is in the repo, so it is re-run after a change rather than performed again by hand.
       </figcaption>
     </figure>
   </div>
@@ -307,14 +309,19 @@
       <h2>Your framework owns the agent. Nobody owns the room.</h2>
       <p>
         Every agent framework assumes one caller. One session, one prompt, one reply, one
-        person holding the terminal. The moment a second person needs to see what the agent
-        is doing — or add a correction while it's mid-turn, or take over the thread after
-        lunch — you are writing that yourself.
+        person holding the terminal. AI is single-player by construction. The moment a second
+        person needs to see what the agent is doing — or add a correction while it's mid-turn,
+        or take over the thread after lunch — you are writing that yourself.
       </p>
       <p>
         Oryxa is that layer and nothing else. <strong>To the framework, Oryxa is one user.
         To your team, it's a shared room.</strong> Your prompts, tools, memory and multi-agent
         orchestration stay exactly where they are.
+      </p>
+      <p>
+        <strong>The core is open source.</strong> Apache 2.0, Go, one binary — the room, the
+        event log, the connector engine, the shim and the viewer. Not a hosted product with a
+        repo attached: <code>docker compose up</code> is the whole thing.
       </p>
     </div>
 
@@ -509,6 +516,15 @@ $ curl -X POST localhost:8080/v1/sessions \
     -d <span class="s">'{"agents":["langgraph","adk","pydanticai","crewai"]}'</span></pre>
       <figcaption>A room costs its slowest agent rather than the sum of all of them. One agent failing does not stop the others.</figcaption>
     </figure>
+
+    <figure class="code">
+      <pre><span class="c"># Claude Code and Codex in one room — the shot at the top of this page</span>
+$ export ORYXA_SHIM_TOKEN=$(openssl rand -hex 32)
+$ oryxa-shim -agents shim.yaml &amp;     <span class="c"># same shell, same variable</span>
+$ oryxa serve &amp;
+$ oryxa open claude-code codex</pre>
+      <figcaption>Both CLIs already installed and signed in; the shim gives them an HTTP surface and then they are ordinary connectors. Set <code>ORYXA_SHIM_TOKEN</code> on only one side and every agent looks healthy while every turn fails with a 401 that names neither end. Read the limits below first — both agents can write inside their working directory.</figcaption>
+    </figure>
   </section>
 
   <div class="rule"></div>
@@ -519,20 +535,29 @@ $ curl -X POST localhost:8080/v1/sessions \
       <h2>What isn't built yet.</h2>
 
       <div class="limits">
-        <h3>Run it locally, not on the open internet.</h3>
+        <h3>The coding agents can write, and that is the sharp edge.</h3>
         <p>
-          Rooms are scoped — each carries a secret, and one token no longer opens all of
-          them — and turns are budgeted per room and per server. What is still open:
-          <strong>identity is self-declared unless a proxy establishes it</strong>, so a name
-          is a claim rather than a fact. Point <code>-trust-header</code> at the header your
-          proxy already sets and the log records people instead of claims.
+          Both shipped CLI agents write inside their working directory, because read-only made
+          them worse colleagues than they needed to be — an agent that cannot run the tests
+          cannot verify anything. <strong>Anyone who can reach that room can cause writes to
+          that directory.</strong> They are confined differently: Codex by the OS sandbox,
+          Claude Code by path-patterned permissions only. Point it at a checkout you can throw
+          away.
         </p>
       </div>
 
       <p style="margin-top: 22px">
-        Behind that: no presence (who's here, who's typing), and events carry neither a hash
-        chain nor model token usage. <code>PLAN.md</code> in the repo is the source of truth
-        and carries the same list with the reasoning for each.
+        Rooms are scoped — each carries a secret, and turns are budgeted per room and per
+        server. A room key binds a name to a capability, so a name can be proved rather than
+        claimed, and every message records which. All of it is off by default so the
+        two-minute quickstart stays two minutes; none of it should be off anywhere else.
+      </p>
+      <p>
+        Still missing: agents have no owners, so the room's idea of who is in it is "everyone
+        who has spoken"; no presence; turns are bounded per minute but not in flight at once;
+        and events carry neither a hash chain nor token counts, so the log is durable but not
+        tamper-evident and cost per turn cannot be derived from it. <code>PLAN.md</code> in the
+        repo is the source of truth and carries the same list with the reasoning for each.
       </p>
       <p>
         <code>/v1</code> is stable. The connector spec is stable and additive — new fields,

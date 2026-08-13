@@ -24,12 +24,18 @@ agents:
     timeout: 15m
     session: generate
 
-    # READ-ONLY BY DEFAULT, and this is the line to think hardest about before
-    # changing. Anyone who can talk to the room can make this agent act. An
-    # allowlist is a stronger boundary than a permission mode, because it cannot
-    # be prompted around: with no Edit, Write or Bash, no wording gets a file
-    # changed. Widen it when you have read-scoping and trust everyone in the
-    # room, not before.
+    # THIS AGENT CAN WRITE, and this is the line to think hardest about before
+    # copying this file. Anyone who can talk to the room can make it act.
+    #
+    # It is not held by an OS sandbox the way Codex is — `dir:` only sets the
+    # working directory, so containment here is entirely the path patterns in
+    # `--allowedTools` below. An allowlist is a stronger boundary than a
+    # permission mode because it cannot be prompted around, but it only binds
+    # what it names: drop the `Edit(./**)` / `Write(./**)` patterns and this
+    # agent writes anywhere it likes. Verified — it created a file in /tmp
+    # without objection.
+    #
+    # Point it at a checkout you can throw away.
     first:
       - claude
       - -p
@@ -96,9 +102,11 @@ agents:
   # What it costs: anyone who can reach a room holding this agent can cause writes
   # to this directory. That is a bigger blast radius than the token was ever
   # guarding, so it belongs on a checkout you can throw away rather than the one
-  # you are working in. `claude-code` above stays read-only deliberately — one
-  # agent that can run the tests and one that cannot is a useful pair, and it
-  # keeps the safer shape in front of anyone reading this file.
+  # you are working in.
+  #
+  # Both shipped agents can write, and they are confined by different mechanisms
+  # — Codex by the OS sandbox below, `claude-code` above by path patterns only.
+  # Worth knowing which one you are relying on before you widen either.
   #
   # Writes are confined to this directory and temp. Codex still could not reach
   # a credential in $HOME even if asked to.

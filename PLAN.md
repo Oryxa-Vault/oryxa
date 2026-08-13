@@ -8,11 +8,18 @@ For using it, start with [README.md](README.md) and
 
 ## 1. The job
 
-> **Agent frameworks are single-user. Oryxa makes them multi-user.**
+> **AI is single-player. Oryxa makes it multiplayer.**
 
-LangGraph, CrewAI and ADK already do multi-agent well. We don't touch that. What
-none of them do is let **several people share one agent session** — watch it
-live, add input, hand off, pick up where someone left off.
+Every agent framework and every coding CLI assumes one caller: one session, one
+prompt, one reply, one person holding the terminal. LangGraph, CrewAI and ADK
+already do multi-agent well, and we don't touch that. What none of them do —
+and what Claude Code and Codex do not do either — is let **several people share
+one agent session**: watch it live, add input, hand off, pick up where someone
+left off.
+
+The sharpest form of it is two coding agents from rival labs in one room,
+answering the same question at the same time, in front of the same people, with
+neither CLI modified and neither aware the other is there.
 
 > **To the framework, Oryxa is one user. To your team, it's a shared room.**
 

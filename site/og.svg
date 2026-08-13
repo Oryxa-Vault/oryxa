@@ -12,22 +12,19 @@
 
   <!-- headline -->
   <text x="104" y="557" fill="#f2f7f5" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="56" font-weight="700">Agent frameworks</text>
-  <text x="104" y="625" fill="#f2f7f5" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="56" font-weight="700">are single-user.</text>
-  <text x="104" y="700" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="52" font-weight="400">Oryxa makes them multi-user.</text>
+        font-size="56" font-weight="700">AI is single-player.</text>
+  <text x="104" y="625" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="56" font-weight="400">Oryxa makes it multiplayer.</text>
+  <text x="104" y="702" fill="#3ddc97" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="32" font-weight="400">Claude Code and Codex, one room.</text>
 
   <!-- agent lanes -->
   <circle cx="112" cy="787" r="7" fill="#3ddc97"/>
   <text x="132" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="21">analyst</text>
-  <circle cx="268" cy="787" r="7" fill="#a78bfa"/>
-  <text x="288" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="21">cfo</text>
-  <circle cx="376" cy="787" r="7" fill="#fbbf24"/>
-  <text x="396" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="21">comms</text>
+        font-size="21">claude-code</text>
+  <circle cx="300" cy="787" r="7" fill="#a78bfa"/>
+  <text x="320" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
+        font-size="21">codex</text>
 
   <text x="1096" y="794" fill="#5b6664" text-anchor="end"
         font-family="ui-monospace, SF Mono, Menlo, monospace" font-size="21">Apache 2.0 · Go</text>
