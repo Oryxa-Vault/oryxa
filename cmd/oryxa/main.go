@@ -94,6 +94,15 @@ func versionString() string {
 	v := version
 	if v == "dev" {
 		if info, ok := debug.ReadBuildInfo(); ok {
+			// A `go install module@version` build has no VCS stamp — the module
+			// proxy serves a zip, not a checkout — but it does know which
+			// version it resolved. Without this, every released binary reports
+			// "dev", which is the one thing a bug report needs to be specific
+			// about.
+			if mv := info.Main.Version; mv != "" && mv != "(devel)" {
+				return fmt.Sprintf("oryxa %s (%s/%s, %s)", mv, runtime.GOOS, runtime.GOARCH, runtime.Version())
+			}
+
 			var rev, dirty string
 			for _, s := range info.Settings {
 				switch s.Key {
