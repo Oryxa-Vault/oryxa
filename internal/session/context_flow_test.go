@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/events"
-	"github.com/oryxa/oryxa/internal/sharedctx"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/events"
+	"github.com/Oryxa-Vault/oryxa/internal/sharedctx"
 )
 
 // ---- harness ----

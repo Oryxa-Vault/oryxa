@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/oryxa/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
 )
 
 func chunksOf(t *testing.T, lines ...string) []json.RawMessage {

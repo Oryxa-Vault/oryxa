@@ -1,4 +1,4 @@
-module github.com/oryxa/oryxa
+module github.com/Oryxa-Vault/oryxa
 
 go 1.25.0
 

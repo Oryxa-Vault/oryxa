@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oryxa/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
 )
 
 func room7(t *testing.T) (*connector.Registry, []string) {

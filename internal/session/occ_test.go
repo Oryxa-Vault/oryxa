@@ -5,9 +5,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/events"
-	"github.com/oryxa/oryxa/internal/sharedctx"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/events"
+	"github.com/Oryxa-Vault/oryxa/internal/sharedctx"
 )
 
 // Two writers holding the same version must not both win. This is the lost

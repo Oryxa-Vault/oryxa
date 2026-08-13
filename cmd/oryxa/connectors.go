@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/oryxa/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
 )
 
 func connectorsFlag(fs *flag.FlagSet) *string {

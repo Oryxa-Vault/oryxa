@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/events"
-	"github.com/oryxa/oryxa/internal/session"
-	"github.com/oryxa/oryxa/internal/sharedctx"
-	"github.com/oryxa/oryxa/internal/web"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/events"
+	"github.com/Oryxa-Vault/oryxa/internal/session"
+	"github.com/Oryxa-Vault/oryxa/internal/sharedctx"
+	"github.com/Oryxa-Vault/oryxa/internal/web"
 )
 
 type Server struct {

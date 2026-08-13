@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/events"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/events"
 )
 
 func waitPrompts(t *testing.T, a *agentStub, n int) []string {

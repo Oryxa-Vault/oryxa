@@ -39,6 +39,14 @@ no prompt edit, no awareness that Oryxa exists.
 
 Needs Go 1.25+. Docker optional.
 
+Just the binary:
+
+```bash
+go install github.com/Oryxa-Vault/oryxa/cmd/oryxa@latest
+```
+
+Working on the repo, or you want the shim and the stand-in agent:
+
 ```bash
 git clone https://github.com/Oryxa-Vault/oryxa && cd oryxa
 go build -o oryxa ./cmd/oryxa

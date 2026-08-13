@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oryxa/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
 )
 
 // shimEvent is the type on every line this program writes itself, as opposed to

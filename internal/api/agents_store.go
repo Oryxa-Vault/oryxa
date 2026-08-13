@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/events"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/events"
 )
 
 // Connectors registered over the API are durable.

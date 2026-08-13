@@ -1,8 +1,13 @@
 # Commands
 
 ```bash
-go install ./cmd/oryxa      # or: go build -o oryxa ./cmd/oryxa
+go install github.com/Oryxa-Vault/oryxa/cmd/oryxa@latest
 ```
+
+From a clone: `go install ./cmd/oryxa`, or `go build -o oryxa ./cmd/oryxa`.
+`oryxa-shim` is a second binary — `go install ./cmd/oryxa-shim` — and is
+deliberately not in the Docker image, because it exists to start processes on
+the host.
 
 `oryxa help` prints all of this. `oryxa <command> -h` prints one command's own
 flags.

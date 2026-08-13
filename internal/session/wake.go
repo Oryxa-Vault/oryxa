@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/oryxa/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
 )
 
 // Who speaks.

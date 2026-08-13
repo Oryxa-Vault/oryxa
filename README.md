@@ -30,8 +30,8 @@ A running room with a stand-in agent. Pick the agent in the sidebar, hit **+ new
 session**, and talk to it. No Docker:
 
 ```bash
-go build -o oryxa ./cmd/oryxa && go run ./cmd/mockagent &
-./oryxa launch window
+go install github.com/Oryxa-Vault/oryxa/cmd/oryxa@latest
+oryxa launch window
 ```
 
 **As two people:** open the viewer in a second tab and change the name in the

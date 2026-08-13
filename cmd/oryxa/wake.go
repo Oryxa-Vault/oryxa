@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/oryxa/oryxa/internal/session"
+	"github.com/Oryxa-Vault/oryxa/internal/session"
 )
 
 // cmdWake answers "why did my agent not say anything".

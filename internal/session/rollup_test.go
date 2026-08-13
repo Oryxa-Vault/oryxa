@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/events"
-	"github.com/oryxa/oryxa/internal/sharedctx"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/events"
+	"github.com/Oryxa-Vault/oryxa/internal/sharedctx"
 )
 
 // summariser stands in for a model. It reports how many items it was handed, so

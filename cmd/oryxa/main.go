@@ -18,10 +18,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/oryxa/oryxa/internal/api"
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/events"
-	"github.com/oryxa/oryxa/internal/session"
+	"github.com/Oryxa-Vault/oryxa/internal/api"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/events"
+	"github.com/Oryxa-Vault/oryxa/internal/session"
 )
 
 // version is set at build time:

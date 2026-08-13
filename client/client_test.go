@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oryxa/oryxa/client"
-	"github.com/oryxa/oryxa/internal/api"
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/events"
-	"github.com/oryxa/oryxa/internal/session"
+	"github.com/Oryxa-Vault/oryxa/client"
+	"github.com/Oryxa-Vault/oryxa/internal/api"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/events"
+	"github.com/Oryxa-Vault/oryxa/internal/session"
 )
 
 // Exercised against a real server rather than a stubbed transport. A client that

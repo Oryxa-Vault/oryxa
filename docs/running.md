@@ -205,6 +205,8 @@ narrow: it is a thin wrapper over `/v1`, so it is stable exactly as far as `/v1`
 is.
 
 ```go
+import "github.com/Oryxa-Vault/oryxa/client"
+
 c := client.New("http://localhost:8080")
 room, _ := c.Open(ctx, "researcher", "critic")
 

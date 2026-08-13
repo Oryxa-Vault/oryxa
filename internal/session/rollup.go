@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/oryxa/oryxa/internal/connector"
-	"github.com/oryxa/oryxa/internal/sharedctx"
+	"github.com/Oryxa-Vault/oryxa/internal/connector"
+	"github.com/Oryxa-Vault/oryxa/internal/sharedctx"
 )
 
 // Rolling a long list up into a summary, so a room stops forgetting quietly.
