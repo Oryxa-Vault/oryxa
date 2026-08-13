@@ -178,6 +178,9 @@ oryxa check claude-code
 The command line lives in `shim.yaml`, never in the connector:
 
 ```yaml
+# Trimmed to a read-only tool list to keep the shape readable. The shipped
+# shim.yaml grants Edit and Write as well — read the comments in it before
+# copying, and see the note below.
 agents:
   - name: claude-code
     dir: .
@@ -239,11 +242,16 @@ response:
     - $.text
 ```
 
-**Two things to decide before you widen the tool list.** Anyone who can reach
-the room can make this agent act, so the shipped default is a read-only
-allowlist — with no Edit, Write or Bash, no wording gets a file changed, which
-is a stronger boundary than a permission mode because it cannot be prompted
-around. And a turn here is a whole agentic loop rather than one model call, so
+**Two things to decide before you copy `shim.yaml`.** Anyone who can reach the
+room can make this agent act, and both shipped agents can write inside their
+working directory — Codex held there by the OS sandbox, Claude Code by
+path-patterned permissions only. An allowlist is a stronger boundary than a
+permission mode because it cannot be prompted around, but it only binds what it
+names: widening `Edit(./**)` to `Edit(**)`, or adding a broad `Bash(*)`, removes
+the boundary entirely. Point it at a checkout you can throw away, and see
+[SECURITY.md](../SECURITY.md#if-you-run-oryxa-shim).
+
+And a turn here is a whole agentic loop rather than one model call, so
 [who answers](#who-answers) stops being an optimisation and starts being the
 difference between usable and not.
 

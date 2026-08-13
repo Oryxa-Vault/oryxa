@@ -116,9 +116,9 @@ func versionString() string {
 }
 
 func usage() {
-	fmt.Print(`oryxa — many people, one agent
+	fmt.Print(`oryxa — many people, many agents, one room
 
-  Puts your existing agents in a shared session several people can watch and
+  Puts your existing agents in a shared room several people can watch and
   talk to. Nothing about the agents changes.
 
 Usage:
@@ -167,7 +167,7 @@ Serve flags
 
 Run  oryxa <command> -h  for a command's own flags.
 
-  https://github.com/oryxa/oryxa
+  https://github.com/Oryxa-Vault/oryxa
 `)
 }
 
