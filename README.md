@@ -22,6 +22,7 @@ again by hand.*
 ## Try it
 
 ```bash
+git clone https://github.com/Oryxa-Vault/oryxa && cd oryxa
 docker compose up -d && go run ./cmd/mockagent &
 open http://localhost:8080
 ```
@@ -30,8 +31,17 @@ A running room with a stand-in agent. Pick the agent in the sidebar, hit **+ new
 session**, and talk to it. No Docker:
 
 ```bash
+go build -o oryxa ./cmd/oryxa && go run ./cmd/mockagent &
+./oryxa launch window
+```
+
+Both start in the clone because connectors are **files** — `oryxa` reads
+`./connectors`, and that is where the working examples live. Once you have your
+own, the binary alone is enough:
+
+```bash
 go install github.com/Oryxa-Vault/oryxa/cmd/oryxa@latest
-oryxa launch window
+oryxa serve -connectors /path/to/yours
 ```
 
 **As two people:** open the viewer in a second tab and change the name in the
@@ -145,7 +155,7 @@ from something you can leave running.
 | [Integration guide](docs/integrating.md) | recipes, the full connector reference, and a symptom-to-fix table |
 | [Running it for real](docs/running.md) | durability, auth, identity, budgets, Docker, endpoints |
 | [Commands](docs/cli.md) | the CLI |
-| [AGENTS.md](AGENTS.md) | the same ground, written for a coding agent |
+| [AGENTS.md](AGENTS.md) | hand this to your coding agent — a runbook it follows to set Oryxa up and connect your agent, with a check after every step |
 | [Agent skills](skills/) | let Claude write your connector — it is an iterative probe-and-adjust loop, which is what agents are good at |
 | [SECURITY.md](SECURITY.md) | the posture, and what it does not cover |
 | [PLAN.md](PLAN.md) | what is built, what is not, and why |

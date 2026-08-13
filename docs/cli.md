@@ -9,6 +9,10 @@ From a clone: `go install ./cmd/oryxa`, or `go build -o oryxa ./cmd/oryxa`.
 deliberately not in the Docker image, because it exists to start processes on
 the host.
 
+> Connectors are files. Every command reads `./connectors` unless you say
+> otherwise, so an installed binary run somewhere else reports `no connectors in
+> ./connectors` — point `-connectors` at your directory, or run from a clone.
+
 `oryxa help` prints all of this. `oryxa <command> -h` prints one command's own
 flags.
 
