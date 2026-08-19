@@ -1,4 +1,4 @@
-# Works against `go run ./cmd/mockagent`. Streaming, with an open step.
+# Works against `cargo run --bin mockagent`. Streaming, with an open step.
 name: mock-sse
 base: http://{{env.ORYXA_AGENT_HOST}}:9000
 timeout: 2m

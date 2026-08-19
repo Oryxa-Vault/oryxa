@@ -14,7 +14,7 @@ modified, and neither knows the other is there.
 again by hand.*
 
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/go-1.25%2B-00ADD8.svg)](go.mod)
+[![Rust](https://img.shields.io/badge/rust-stable-CE422B.svg)](Cargo.toml)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 ---
@@ -22,30 +22,33 @@ again by hand.*
 ## Try it
 
 ```bash
+curl -fsSL https://oryxa.in/install.sh | sh
+oryxa
+```
+
+`oryxa` is the room view: your rooms, the transcript live as several agents
+answer at once, and a box to talk to them. **With no server to talk to it starts
+one**, in-process, against a durable file in your own data directory — so this
+works on a machine with nothing else installed, and the rooms are still there
+tomorrow. `--server` points it at a real one instead.
+
+What it does not come with is agents. A connector is a **file** describing HTTP
+calls, and yours live in `~/.config/oryxa/connectors` — or in `./connectors`,
+which is what the room view reads when you run it inside a clone:
+
+```bash
 git clone https://github.com/Oryxa-Vault/oryxa && cd oryxa
-docker compose up -d && go run ./cmd/mockagent &
-open http://localhost:8080
+cargo run --bin mockagent &     # a stand-in agent on :9000
+cargo run --bin oryxa
 ```
 
-A running room with a stand-in agent. Pick the agent in the sidebar, hit **+ new
-session**, and talk to it. No Docker:
+Every connector in that directory is a working example. Press `n`, pick
+`mock-sse` with `space`, and talk to it.
 
-```bash
-go build -o oryxa ./cmd/oryxa && go run ./cmd/mockagent &
-./oryxa launch window
-```
-
-Both start in the clone because connectors are **files** — `oryxa` reads
-`./connectors`, and that is where the working examples live. Once you have your
-own, the binary alone is enough:
-
-```bash
-go install github.com/Oryxa-Vault/oryxa/cmd/oryxa@latest
-oryxa serve -connectors /path/to/yours
-```
-
-**As two people:** open the viewer in a second tab and change the name in the
-composer. Both tabs are in the same room, watching the same agent.
+**As two people:** the viewer is embedded in the binary and served at the same
+address as the API, so a colleague can watch the same room in a browser tab.
+`oryxa key <room> <name>` issues them a key that speaks as a name rather than
+claims one.
 
 ## Claude Code and Codex in one room
 
@@ -65,9 +68,25 @@ oryxa open claude-code codex
 > it at a checkout you can throw away. [SECURITY.md](SECURITY.md) has the
 > detail.
 
+ACP is now the preferred local transport for compatible coding agents. One
+long-lived ACP subprocess and session belongs to each room-agent lane, so turns
+stay ordered within an agent while separate agents continue in parallel. ACP
+session IDs are stored in the event log and loaded again after a server restart.
+The protected shim above remains the fallback.
+
+Start from
+[`connectors/templates/acp-coding-agent.yaml`](connectors/templates/acp-coding-agent.yaml),
+set `ORYXA_WORKSPACE` to an absolute workspace path, and copy the template into
+your connector directory before running it. ACP commands are accepted only from
+operator-controlled files, never from the runtime registration API. **Permission
+requests stop the room view and ask**, with the agent's exact options; the
+answer is delivered to the waiting lane, recorded in the event log, and
+reflected everywhere the room is open. From a script, that is `oryxa approve`.
+
 ## Connect your own agent
 
-A connector is a **description of HTTP calls**, not code. One file, no Go.
+An HTTP connector is a **description of HTTP calls**, not code. One file, no
+programming.
 
 ```yaml
 name: my-agent
@@ -104,7 +123,7 @@ different surfaces, one core, one YAML file each — see
 ## What it does
 
 **Several agents, one room.** Each gets its own lane: its own cursor into what
-the room has said, its own goroutine, its own conversation. They answer **in
+the room has said, its own task, its own conversation. They answer **in
 parallel**, so a room costs its slowest agent rather than the sum of them. Five
 live frameworks answering one question: 15.6s of work in 4.9s of wall clock.
 
@@ -134,8 +153,13 @@ to its release cycle.
 ## Status
 
 **v0.5.** Connectors, rooms, shared context, an event log everything is a fold
-over, live stream, viewer, command-line agents through a shim, scoped rooms,
+over, live stream, viewer, coding agents through ACP or the retained shim, scoped rooms,
 turn budgets, and room keys so a name can be proved rather than claimed.
+
+One Rust binary is the server, the room view and the scripting surface, and it
+installs from a URL. The browser viewer remains embedded in it. `oryxa-shim`
+intentionally remains in Go, because it exists to start processes on the host;
+see [`RUST_REWRITE.md`](RUST_REWRITE.md) for the exact boundary.
 
 Not built yet: agents have no owners, so the room's idea of who is in it is
 "everyone who has spoken"; no presence; turns are bounded per minute but not in
@@ -154,7 +178,7 @@ from something you can leave running.
 | [Tutorial](docs/tutorial.md) | your agent in a room, end to end |
 | [Integration guide](docs/integrating.md) | recipes, the full connector reference, and a symptom-to-fix table |
 | [Running it for real](docs/running.md) | durability, auth, identity, budgets, Docker, endpoints |
-| [Commands](docs/cli.md) | the CLI |
+| [Commands](docs/cli.md) | the room view, the CLI, and how to install it |
 | [AGENTS.md](AGENTS.md) | hand this to your coding agent — a runbook it follows to set Oryxa up and connect your agent, with a check after every step |
 | [Agent skills](skills/) | let Claude write your connector — it is an iterative probe-and-adjust loop, which is what agents are good at |
 | [SECURITY.md](SECURITY.md) | the posture, and what it does not cover |

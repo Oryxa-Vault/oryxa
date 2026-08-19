@@ -1,0 +1,13 @@
+# ACP agents are local subprocesses, so this connector must be loaded from a
+# trusted file. It cannot be registered through the runtime HTTP API.
+name: acp-coding-agent
+
+acp:
+  # Replace this adapter with any ACP-compatible agent command. Arguments are
+  # passed directly; Oryxa never invokes a shell.
+  command: npx
+  args: [-y, "@agentclientprotocol/codex-acp@latest"]
+  cwd: "{{env.ORYXA_WORKSPACE}}"
+
+capabilities: [stream, multi_turn, cancel]
+timeout: 15m

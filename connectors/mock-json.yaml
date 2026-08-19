@@ -1,4 +1,4 @@
-# Works against `go run ./cmd/mockagent`. No streaming, no open step —
+# Works against `cargo run --bin mockagent`. No streaming, no open step —
 # the minimum a connector can be.
 name: mock-json
 base: http://{{env.ORYXA_AGENT_HOST}}:9000

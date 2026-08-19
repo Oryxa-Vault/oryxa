@@ -5,22 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>Oryxa — multiplayer AI: many people, many agents, one room</title>
-<meta name="description" content="Multiplayer AI. Put Claude Code and Codex in one room, on one question, watched by your whole team — live streaming, an append-only event log, and declarative connectors for any agent. Apache 2.0, Go.">
-<link rel="canonical" href="https://oryxa-vault.github.io/oryxa/">
+<meta name="description" content="Multiplayer AI. Put Claude Code and Codex in one room, on one question, watched by your whole team — live streaming, an append-only event log, and declarative connectors for any agent. Apache 2.0, Rust.">
+<link rel="canonical" href="https://oryxa.in/">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Oryxa">
 <meta property="og:title" content="Oryxa — multiplayer AI: many people, many agents, one room">
-<meta property="og:description" content="Put Claude Code and Codex in one room, on one question, watched by your whole team. Neither CLI modified, neither knows the other is there. Apache 2.0, Go.">
-<meta property="og:url" content="https://oryxa-vault.github.io/oryxa/">
-<meta property="og:image" content="https://oryxa-vault.github.io/oryxa/og.png">
+<meta property="og:description" content="Put Claude Code and Codex in one room, on one question, watched by your whole team. Neither CLI modified, neither knows the other is there. Apache 2.0, Rust.">
+<meta property="og:url" content="https://oryxa.in/">
+<meta property="og:image" content="https://oryxa.in/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Oryxa — multiplayer AI: many people, many agents, one room">
-<meta name="twitter:description" content="Put Claude Code and Codex in one room, on one question, watched by your whole team. Apache 2.0, Go.">
-<meta name="twitter:image" content="https://oryxa-vault.github.io/oryxa/og.png">
+<meta name="twitter:description" content="Put Claude Code and Codex in one room, on one question, watched by your whole team. Apache 2.0, Rust.">
+<meta name="twitter:image" content="https://oryxa.in/og.png">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0f10'/%3E%3Crect x='3' y='3' width='10' height='10' fill='%233ddc97'/%3E%3C/svg%3E">
 
@@ -319,7 +319,7 @@
         orchestration stay exactly where they are.
       </p>
       <p>
-        <strong>The core is open source.</strong> Apache 2.0, Go, one binary — the room, the
+        <strong>The core is open source.</strong> Apache 2.0, Rust, one binary — the room, the
         event log, the connector engine, the shim and the viewer. Not a hosted product with a
         repo attached: <code>docker compose up</code> is the whole thing.
       </p>
@@ -501,13 +501,20 @@ $ oryxa wake <span class="s">"we should consider using more ai tools"</span></pr
   <section id="start">
     <div class="col">
       <div class="eyebrow">Start here</div>
-      <h2>A running room with a stand-in agent, in two minutes.</h2>
+      <h2>One binary. It installs from a URL and brings its own runtime.</h2>
     </div>
 
     <figure class="code">
-      <pre>$ docker compose up -d &amp;&amp; go run ./cmd/mockagent &amp;
-$ open http://localhost:8080</pre>
-      <figcaption>No Docker: <code>go build -o oryxa ./cmd/oryxa</code> then <code>./oryxa launch window</code>. To see it as two people, open the viewer in a second tab and change the name in the composer — both tabs are in the same room, watching the same agent.</figcaption>
+      <pre>$ curl -fsSL https://oryxa.in/install.sh | sh
+$ oryxa</pre>
+      <figcaption><code>oryxa</code> is the room view: rooms, the transcript live as several agents answer at once, and a box to talk to them. With no server to talk to it starts one, against a durable file in your own data directory — so the rooms are still there tomorrow. The browser viewer is served at the same address for anyone who would rather watch in a tab.</figcaption>
+    </figure>
+
+    <figure class="code">
+      <pre>$ git clone https://github.com/Oryxa-Vault/oryxa &amp;&amp; cd oryxa
+$ cargo run --bin mockagent &amp;
+$ cargo run --bin oryxa</pre>
+      <figcaption>Connectors are files, and the working examples live in that clone. Press <code>n</code>, choose <code>mock-sse</code>, and talk to it. To see it as two people, open the viewer in a browser tab and change the name in the composer — both are in the same room, watching the same agent.</figcaption>
     </figure>
 
     <figure class="code">
@@ -573,7 +580,7 @@ $ oryxa open claude-code codex</pre>
       <div class="eyebrow">Contributing</div>
       <h2>The most useful thing is a connector for a framework we haven't tested.</h2>
       <p>
-        That's one YAML file, no Go required. If you tried Oryxa and got stuck, an issue
+        That's one YAML file, no code required. If you tried Oryxa and got stuck, an issue
         saying where you got lost is worth real work to us — it tells us exactly where the
         docs are wrong.
       </p>

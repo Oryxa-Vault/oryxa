@@ -31,6 +31,7 @@ services:
       # Set ORYXA_TOKEN to require a token. Unset, anyone who can reach the
       # port has full access — fine on a laptop, nowhere else.
       ORYXA_TOKEN: ${ORYXA_TOKEN:-}
+      ORYXA_ADMIN_TOKEN: ${ORYXA_ADMIN_TOKEN:-}
       # Set to the header your proxy already sets (X-Forwarded-User, ...) so
       # the log records people rather than claims.
       ORYXA_TRUST_HEADER: ${ORYXA_TRUST_HEADER:-}
@@ -41,13 +42,15 @@ services:
       # anything is containerised: the shim starts processes, so it stays on the
       # host with the CLI and its credentials rather than moving in here.
       ORYXA_SHIM_HOST: ${ORYXA_SHIM_HOST:-host.docker.internal}
+      ORYXA_SHIM_TOKEN: ${ORYXA_SHIM_TOKEN:-}
       # Development: erase every session on start, so a restart gives you an
       # empty board instead of every room you were already finished with. It
       # deletes the durable log — leave it unset anywhere the history matters.
-      ORYXA_RESET: ${ORYXA_RESET:-}
-      # Connector that summarises a shared-context list once it outgrows a
-      # prompt. Unset, a long room keeps a count-only marker instead.
+      ORYXA_RESET: ${ORYXA_RESET:-false}
+      ORYXA_ROOM_TURNS_PER_MIN: ${ORYXA_ROOM_TURNS_PER_MIN:-30}
+      ORYXA_TURNS_PER_MIN: ${ORYXA_TURNS_PER_MIN:-120}
       ORYXA_SUMMARISER: ${ORYXA_SUMMARISER:-}
+      ORYXA_ALLOW_PRIVATE_AGENTS: ${ORYXA_ALLOW_PRIVATE_AGENTS:-false}
     volumes:
       # Your connectors. Edit them on the host; restart to reload.
       - ./connectors:/connectors:ro

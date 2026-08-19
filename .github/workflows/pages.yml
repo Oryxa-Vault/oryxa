@@ -1,8 +1,12 @@
-# Publishes site/ to GitHub Pages.
+# Publishes site/ to GitHub Pages, at oryxa.in (site/CNAME).
 #
 # The recording lives once, in docs/media/, because the README points at it there
 # and a second copy in site/ would be the one that goes stale. It is copied into
 # the build output instead.
+#
+# install.sh is copied the same way and for the same reason: the URL people are
+# told to curl is this site, and the script they get must be the one in the repo
+# that changes with it.
 name: pages
 
 on:
@@ -11,6 +15,7 @@ on:
     paths:
       - 'site/**'
       - 'docs/media/**'
+      - 'install.sh'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -36,10 +41,14 @@ jobs:
           mkdir -p _site/media
           cp -R site/. _site/
           cp docs/media/room.gif _site/media/room.gif
+          cp install.sh _site/install.sh
+
+      - name: The installer is valid shell
+        run: sh -n _site/install.sh
 
       - name: Check the page references files that exist
         run: |
-          for f in og.png media/room.gif; do
+          for f in og.png media/room.gif install.sh; do
             test -f "_site/$f" || { echo "missing: $f"; exit 1; }
           done
 

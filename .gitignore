@@ -2,6 +2,7 @@
 /oryxa
 /mockagent
 /dist/
+/target/
 *.exe
 
 # Local state
@@ -24,6 +25,7 @@
 # run lives in shim.yaml, which is the file to think about before sharing.
 !/connectors/claude-code.yaml
 !/connectors/codex.yaml
+!/connectors/codex-acp.yaml
 # bee-agui.yaml stays local: it names a private internal service. The generic
 # AG-UI template covers the same protocol for everyone else.
 
