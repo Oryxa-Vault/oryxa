@@ -254,6 +254,7 @@ impl Manager {
             let context = RenderContext {
                 conversation: session.id.clone(),
                 agent: agent.clone(),
+                agents: session.agents.clone(),
                 workspace: session.workspace.clone(),
                 vars: spec.vars.clone(),
                 ..Default::default()
@@ -548,6 +549,7 @@ impl Manager {
             let context = RenderContext {
                 conversation: session.id.clone(),
                 agent: agent.clone(),
+                agents: session.agents.clone(),
                 handle: lane_state.handle.clone(),
                 ..Default::default()
             };
@@ -886,6 +888,7 @@ impl Manager {
             conversation: session.id.clone(),
             handle: lane_state.handle.clone(),
             agent: lane.agent.clone(),
+            agents: session.agents.clone(),
             workspace: session.workspace.clone(),
             vars: spec.vars.clone(),
             captures: lane_state.captures.clone(),

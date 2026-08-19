@@ -18,6 +18,13 @@ pub struct RenderContext {
     pub conversation: String,
     pub handle: String,
     pub agent: String,
+    /// Every agent in the room, this one included.
+    ///
+    /// An agent that does not know it is in a room answers as though the room
+    /// were a private chat — "just you and me" — and never addresses, defers to
+    /// or disagrees with the agent beside it. Naming the roster is what turns
+    /// several answers into a conversation.
+    pub agents: Vec<String>,
     pub workspace: String,
     pub callback_url: String,
     pub callback_token: String,
@@ -33,6 +40,17 @@ impl RenderContext {
             "turn" => Some(self.turn.clone()),
             "conversation" => Some(self.conversation.clone()),
             "agent" => Some(self.agent.clone()),
+            "agents" => Some(self.agents.join(", ")),
+            // The others. `{{agents}}` says what the room is; this says who
+            // else is in it, which is the phrasing most prompts want.
+            "peers" => Some(
+                self.agents
+                    .iter()
+                    .filter(|name| **name != self.agent)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
             "workspace" => Some(if self.workspace.is_empty() {
                 std::env::var("ORYXA_WORKSPACE")
                     .ok()

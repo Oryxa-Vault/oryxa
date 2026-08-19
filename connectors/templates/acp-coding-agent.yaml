@@ -9,5 +9,29 @@ acp:
   args: [-y, "@agentclientprotocol/codex-acp@latest"]
   cwd: "{{env.ORYXA_WORKSPACE}}"
 
+  # What the agent is sent each turn. Without it an ACP agent is in the room
+  # without being able to see it: its own history it keeps, because one ACP
+  # session lives for the life of the lane, but the other agents' answers are
+  # invisible and it answers as though the room were a private chat.
+  prompt: |
+    This is a multiplayer room. The connected agents are {{agents}}, sharing one
+    session and one context. You are {{agent}}. Everything below the line is
+    what the room knows so far — read it before answering, do not repeat work
+    another agent has already done, and say so plainly when you disagree.
+
+    ---
+
+    {{context}}
+
+    ---
+
+    {{input}}
+
 capabilities: [stream, multi_turn, cancel]
 timeout: 15m
+
+# Reading the room is worth nothing if nobody writes to it.
+context:
+  - key: findings
+    from: $text
+    last: true

@@ -49,7 +49,20 @@ turn:
   body:
     handle: "{{handle}}"
     # The whole room. What the other agent found is the reason to be in one.
-    input: "{{context}}\n\n{{input}}"
+    input: |
+      This is a multiplayer room. The connected agents are {{agents}}, sharing
+      one session and one context. You are {{agent}}. Everything below the line
+      is what the room knows so far, contributed by the people and agents in it
+      — read it before answering, do not repeat work another agent has already
+      done, and say so plainly when you disagree with one of them.
+
+      ---
+
+      {{context}}
+
+      ---
+
+      {{input}}
   response:
     format: ndjson
     error: $.error

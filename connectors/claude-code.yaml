@@ -51,7 +51,20 @@ turn:
     # reason to be in a room at all, and an append list is bounded where it is
     # rendered rather than where it is stored — so this grows to a limit and then
     # stops, and `-summariser` decides whether what fell off is said or counted.
-    input: "{{context}}\n\n{{input}}"
+    input: |
+      This is a multiplayer room. The connected agents are {{agents}}, sharing
+      one session and one context. You are {{agent}}. Everything below the line
+      is what the room knows so far, contributed by the people and agents in it
+      — read it before answering, do not repeat work another agent has already
+      done, and say so plainly when you disagree with one of them.
+
+      ---
+
+      {{context}}
+
+      ---
+
+      {{input}}
   response:
     format: ndjson
     # Checked before the `when` gate, so this catches a failure on any line —

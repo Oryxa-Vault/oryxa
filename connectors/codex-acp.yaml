@@ -26,14 +26,31 @@ acp:
     INITIAL_AGENT_MODE: agent
     NO_BROWSER: "1"
 
-  # What the agent is sent each turn.
+  # A system preamble, ahead of everything else the agent is sent.
   #
-  # Without this an ACP agent is in the room without being able to see it: its
-  # own history it keeps, because one ACP session lives for the life of the
-  # lane, but the other agent's answers are invisible. `{{context}}` is the
-  # room's shared state, and it is bounded where it is rendered — so this grows
-  # to a limit and then stops rather than to the size of the transcript.
-  prompt: "{{context}}\n\n{{input}}"
+  # An agent that does not know it is in a room answers as though the room were
+  # a private chat: it says "just you and me", never addresses the agent beside
+  # it, and repeats work that has already been done. Naming the roster is what
+  # turns several parallel answers into a conversation.
+  #
+  # It costs about twenty tokens a turn, which is nothing beside the context
+  # block underneath it, and it is sent every turn on purpose — a room's roster
+  # can change, and a preamble sent once is a preamble that eventually falls out
+  # of the agent's own window.
+  prompt: |
+    This is a multiplayer room. The connected agents are {{agents}}, sharing one
+    session and one context. You are {{agent}}. Everything below the line is
+    what the room knows so far, contributed by the people and agents in it —
+    read it before answering, do not repeat work another agent has already
+    done, and say so plainly when you disagree with one of them.
+
+    ---
+
+    {{context}}
+
+    ---
+
+    {{input}}
 
 capabilities: [stream, multi_turn, cancel]
 interests: [repo, codebase, bug, test, review, refactor, build]
