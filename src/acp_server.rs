@@ -114,17 +114,27 @@ pub async fn serve(config: Config) -> Result<()> {
         .on_receive_request(
             {
                 let state = state.clone();
+                // Spawned, not awaited here. The connection processes messages on
+                // one task, so opening a room inline holds the whole protocol
+                // still while an HTTP call runs — and if the server it is
+                // talking to has gone away, that call runs until it times out
+                // and the editor closes the transport on a silent agent.
                 async move |_request: NewSessionRequest, responder, connection| {
-                    match open_room(&state.config).await {
-                        Ok(room) => {
-                            let follow = follow(state.clone(), room.clone(), connection);
-                            state.following.lock().await.insert(room.clone(), follow);
-                            responder.respond(NewSessionResponse::new(room))
+                    let state = state.clone();
+                    let opening = connection.clone();
+                    connection.spawn(async move {
+                        match open_room(&state.config).await {
+                            Ok(room) => {
+                                let follow = follow(state.clone(), room.clone(), opening);
+                                state.following.lock().await.insert(room.clone(), follow);
+                                responder.respond(NewSessionResponse::new(room))
+                            }
+                            // The editor gets the reason rather than a dead
+                            // panel: "no server" and "no such agent" need
+                            // different fixes.
+                            Err(error) => responder.respond_with_internal_error(error),
                         }
-                        // The editor gets the reason rather than a dead panel:
-                        // "no server" and "no such agent" need different fixes.
-                        Err(error) => responder.respond_with_internal_error(error),
-                    }
+                    })
                 }
             },
             agent_client_protocol::on_receive_request!(),
@@ -134,20 +144,25 @@ pub async fn serve(config: Config) -> Result<()> {
                 let state = state.clone();
                 async move |request: LoadSessionRequest, responder, connection| {
                     // Replaying is what makes joining late work at all, and it
-                    // is the same history every other client sees.
+                    // is the same history every other client sees. Spawned for
+                    // the same reason as session/new above.
                     let session = request.session_id.clone();
-                    match history(&state.config.client, &session.to_string()).await {
-                        Ok(text) => {
-                            if !text.is_empty() {
-                                notify(&connection, &session.to_string(), &text);
+                    let state = state.clone();
+                    let loading = connection.clone();
+                    connection.spawn(async move {
+                        match history(&state.config.client, &session.to_string()).await {
+                            Ok(text) => {
+                                if !text.is_empty() {
+                                    notify(&loading, &session.to_string(), &text);
+                                }
+                                let room = session.to_string();
+                                let follow = follow(state.clone(), room.clone(), loading);
+                                state.following.lock().await.insert(room, follow);
+                                responder.respond(LoadSessionResponse::new())
                             }
-                            let room = session.to_string();
-                            let follow = follow(state.clone(), room.clone(), connection);
-                            state.following.lock().await.insert(room, follow);
-                            responder.respond(LoadSessionResponse::new())
+                            Err(error) => responder.respond_with_internal_error(error),
                         }
-                        Err(error) => responder.respond_with_internal_error(error),
-                    }
+                    })
                 }
             },
             agent_client_protocol::on_receive_request!(),
