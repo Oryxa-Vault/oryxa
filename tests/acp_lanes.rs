@@ -5,7 +5,7 @@ use std::{
 };
 
 use oryxa::{
-    connector::{AcpSpec, Executor, Origin, Registry, Spec, Step},
+    connector::{AcpSpec, Executor, Origin, Registry, RenderContext, Spec, Step},
     events::{MemoryStore, Store},
     session::{Author, Manager, Turn, TurnState},
 };
@@ -23,6 +23,7 @@ fn acp_spec(name: &str, delay_ms: u64) -> Spec {
                 ("MOCK_ACP_DELAY_MS".into(), delay_ms.to_string()),
             ]),
             cwd: std::env::current_dir().unwrap().display().to_string(),
+            prompt: String::new(),
         }),
         headers: BTreeMap::new(),
         vars: BTreeMap::new(),
@@ -351,4 +352,40 @@ async fn rehydrate_loads_the_persisted_acp_session_handle() {
     assert!(history[1].output.contains(&first_handle));
     assert!(history[1].output.contains(":1:"));
     assert!(history[1].output.ends_with(":after"));
+}
+
+/// Two callers wanting the same lane at once must get the same subprocess.
+///
+/// They race whenever a room warms its lanes as it opens and the first message
+/// arrives while that is still happening, and whenever two turns for one agent
+/// start together. Losing it costs a stray process and splits the agent's turns
+/// across two ACP sessions, so it quietly forgets everything it was told.
+#[tokio::test]
+async fn concurrent_callers_share_one_lane() {
+    let spec = Arc::new(acp_spec("alpha", 20));
+    let executor = Executor::new();
+    let context = RenderContext {
+        conversation: "s_race".into(),
+        agent: "alpha".into(),
+        ..Default::default()
+    };
+
+    let opened = futures_util::future::join_all((0..8).map(|_| {
+        let executor = executor.clone();
+        let spec = spec.clone();
+        let context = context.clone();
+        async move { executor.open(&spec, &context).await }
+    }))
+    .await;
+
+    let sessions = opened
+        .into_iter()
+        .map(|result| result.expect("the lane opens").0)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        sessions.len(),
+        1,
+        "eight callers started {} lanes: {sessions:?}",
+        sessions.len()
+    );
 }

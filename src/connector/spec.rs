@@ -60,6 +60,26 @@ pub struct AcpSpec {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
     pub cwd: String,
+    /// What the agent is sent each turn.
+    ///
+    /// Empty means `{{input}}` — the message and nothing else, which is what
+    /// an ACP lane sent before this existed. An HTTP connector decides this in
+    /// its request body; an ACP one has no body to decide it in, and without
+    /// this an ACP agent is in the room without being able to see it. Its own
+    /// history it keeps: one ACP session lives for the life of the lane.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub prompt: String,
+}
+
+impl AcpSpec {
+    /// The template rendered for each turn, with the historical default.
+    pub fn prompt(&self) -> &str {
+        if self.prompt.trim().is_empty() {
+            "{{input}}"
+        } else {
+            &self.prompt
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -228,6 +248,27 @@ impl Spec {
         self.capabilities
             .iter()
             .any(|candidate| candidate == capability)
+    }
+
+    /// Which shared-context keys this connector's turn refers to.
+    ///
+    /// An ACP connector says so in its prompt template and an HTTP one in its
+    /// request; asking the spec rather than the step is what keeps a room's
+    /// context working the same on both transports.
+    pub fn context_refs(&self) -> Vec<String> {
+        match &self.acp {
+            Some(acp) => crate::connector::template::refs_in(acp.prompt()),
+            None => self.turn.context_refs(),
+        }
+    }
+
+    /// The turn template for an ACP connector, or the bare message for
+    /// anything that is not one.
+    pub fn acp_prompt(&self) -> &str {
+        match &self.acp {
+            Some(acp) => acp.prompt(),
+            None => "{{input}}",
+        }
     }
 
     pub fn is_acp(&self) -> bool {

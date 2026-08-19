@@ -75,7 +75,10 @@ enum PermissionResolution {
 
 #[derive(Clone, Default)]
 pub(crate) struct AcpExecutor {
-    lanes: Arc<Mutex<BTreeMap<String, LaneClient>>>,
+    /// One slot per lane. The slot is what callers contend on, so two turns
+    /// arriving together for the same agent wait for one subprocess instead of
+    /// starting two — while different agents still start in parallel.
+    lanes: Arc<Mutex<BTreeMap<String, LaneSlot>>>,
     permissions: PermissionBroker,
 }
 
@@ -126,7 +129,7 @@ impl AcpExecutor {
         if lane
             .commands
             .send(Command::Prompt {
-                text: context.input.clone(),
+                text: context.render_string(spec.acp_prompt()),
                 turn: context.turn.clone(),
                 cancel,
                 parts: parts_tx,
@@ -135,7 +138,7 @@ impl AcpExecutor {
             .await
             .is_err()
         {
-            self.lanes.lock().await.remove(&key);
+            self.forget(&key).await;
             bail!("ACP lane disconnected before the prompt was sent");
         }
 
@@ -154,8 +157,17 @@ impl AcpExecutor {
     }
 
     pub async fn close(&self, context: &RenderContext) {
-        if let Some(lane) = self.lanes.lock().await.remove(&lane_key(context)) {
+        let slot = self.lanes.lock().await.remove(&lane_key(context));
+        if let Some(slot) = slot
+            && let Some(lane) = slot.lock().await.take()
+        {
             let _ = lane.commands.send(Command::Close).await;
+        }
+    }
+
+    async fn forget(&self, key: &str) {
+        if let Some(slot) = self.lanes.lock().await.remove(key) {
+            slot.lock().await.take();
         }
     }
 
@@ -182,23 +194,35 @@ impl AcpExecutor {
             .await
     }
 
+    /// The lane for this room and agent, started if it is not running.
+    ///
+    /// The slot is taken under the map's lock and then held across the spawn.
+    /// Releasing it in between is a check-then-act race: two callers both miss,
+    /// both start a subprocess, and the second insert orphans the first — which
+    /// costs a stray process and, worse, splits the agent's turns across two
+    /// ACP sessions, so it silently loses everything it had been told. That
+    /// window is small when only turns open lanes and wide open when a room
+    /// warms them as it is created.
     async fn ensure_lane(&self, spec: &Spec, context: &RenderContext) -> Result<LaneClient> {
         let key = lane_key(context);
-        {
+        let slot = {
             let mut lanes = self.lanes.lock().await;
-            if let Some(lane) = lanes.get(&key) {
-                if !lane.commands.is_closed() {
-                    return Ok(lane.clone());
-                }
-                lanes.remove(&key);
-            }
+            lanes.entry(key).or_default().clone()
+        };
+        let mut held = slot.lock().await;
+        if let Some(lane) = held.as_ref()
+            && !lane.commands.is_closed()
+        {
+            return Ok(lane.clone());
         }
-
         let lane = spawn_lane(spec, context, self.permissions.clone()).await?;
-        self.lanes.lock().await.insert(key, lane.clone());
+        *held = Some(lane.clone());
         Ok(lane)
     }
 }
+
+/// A lane that may not have started yet, held while it does.
+type LaneSlot = Arc<Mutex<Option<LaneClient>>>;
 
 fn lane_key(context: &RenderContext) -> String {
     format!("{}\0{}", context.conversation, context.agent)

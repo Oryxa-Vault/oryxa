@@ -26,6 +26,29 @@ acp:
     INITIAL_AGENT_MODE: agent
     NO_BROWSER: "1"
 
+  # What the agent is sent each turn.
+  #
+  # Without this an ACP agent is in the room without being able to see it: its
+  # own history it keeps, because one ACP session lives for the life of the
+  # lane, but the other agent's answers are invisible. `{{context}}` is the
+  # room's shared state, and it is bounded where it is rendered — so this grows
+  # to a limit and then stops rather than to the size of the transcript.
+  prompt: "{{context}}\n\n{{input}}"
+
 capabilities: [stream, multi_turn, cancel]
 interests: [repo, codebase, bug, test, review, refactor, build]
 timeout: 30m
+
+# What this agent leaves behind for the rest of the room.
+#
+# The other half of the same mechanism: reading {{context}} is worth nothing if
+# nobody writes to it. Two connectors appending to one key is fine — append
+# entries cannot conflict, which is why append is the default kind.
+#
+# `last: true` keeps the conclusion rather than the working notes: a coding
+# agent narrates what it is about to do before doing it, and recording that
+# beside the finding is how a room fills up with nothing.
+context:
+  - key: findings
+    from: $text
+    last: true

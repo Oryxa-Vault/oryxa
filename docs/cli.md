@@ -117,6 +117,33 @@ oryxa-shim -agents FILE     serve command-line agents over HTTP
 The viewer is embedded in the binary and served at the same address, for the
 people in the room who would rather have a browser tab.
 
+## What an agent in a room can see
+
+An HTTP connector decides that in its request body. An ACP connector has no
+body, so it says it in `acp.prompt`:
+
+```yaml
+acp:
+  command: ...
+  prompt: "{{context}}\n\n{{input}}"   # default: "{{input}}"
+
+context:                                # the other half
+  - key: findings
+    from: $text
+    last: true
+```
+
+Without both, an ACP agent is in the room without being able to see it. Its own
+history it keeps — one ACP session lives for the life of the lane — but the
+other agent's answers are invisible, and a room of coding agents is really
+several private chats that happen to share a transcript.
+
+`{{context}}` is bounded where it is rendered: twenty items an entry, oldest
+first to fall off, `--summariser` deciding whether what fell off is said or
+counted. So context grows to a limit and stops rather than to the size of the
+room. Each item is attributed, because "codex thinks X" is answerable and an
+anonymous fact is not.
+
 ## Connectors
 
 Read files, so they work before anything is running.

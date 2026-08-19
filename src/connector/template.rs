@@ -146,6 +146,13 @@ impl Step {
     }
 }
 
+/// The context references in one template string.
+pub fn refs_in(template: &str) -> Vec<String> {
+    let mut refs = Vec::new();
+    collect_refs(template, &mut refs);
+    refs
+}
+
 fn collect_refs(input: &str, output: &mut Vec<String>) {
     let mut remaining = input;
     loop {

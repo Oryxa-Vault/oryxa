@@ -278,11 +278,18 @@ pub fn render_entry(entry: &Entry) -> String {
     if dropped > covered {
         lines.push(format!("- ({} earlier items not shown)", dropped - covered));
     }
-    lines.extend(
-        entry.items[dropped..]
-            .iter()
-            .map(|item| format!("- {}", item.text)),
-    );
+    // Attributed, because a room is several agents and a name is what makes
+    // one contribution answerable by another. Without it an agent can read
+    // that something was concluded but not who concluded it, which is the
+    // difference between "codex thinks X" and an anonymous fact it has to
+    // either accept or ignore. It costs a few tokens an item.
+    lines.extend(entry.items[dropped..].iter().map(|item| {
+        if item.by.is_empty() {
+            format!("- {}", item.text)
+        } else {
+            format!("- {}: {}", item.by, item.text)
+        }
+    }));
     lines.join("\n")
 }
 

@@ -231,6 +231,41 @@ impl Manager {
         self.create_scoped(agents, &workspace).await
     }
 
+    /// Starts the ACP subprocesses a room will need, before anybody speaks.
+    ///
+    /// A local coding agent costs five to ten seconds to reach the point where
+    /// it can answer: spawn, protocol handshake, then its own session and auth.
+    /// Paying that when the room opens rather than on the first message is the
+    /// difference between a room that feels live and one that appears to ignore
+    /// its first question.
+    ///
+    /// Deliberately not awaited and deliberately quiet. A failure here is not
+    /// worth failing a room over — the lane opens again on the first turn and
+    /// reports properly there, naming the boundary that broke.
+    fn warm_acp_lanes(self: &Arc<Self>, session: &Arc<Session>) {
+        for agent in &session.agents {
+            let Some(spec) = self.registry.get(agent) else {
+                continue;
+            };
+            if !spec.is_acp() {
+                continue;
+            }
+            let executor = self.executor.clone();
+            let context = RenderContext {
+                conversation: session.id.clone(),
+                agent: agent.clone(),
+                workspace: session.workspace.clone(),
+                vars: spec.vars.clone(),
+                ..Default::default()
+            };
+            tokio::spawn(async move {
+                if let Err(error) = executor.open(&spec, &context).await {
+                    eprintln!("oryxa: {} did not start early: {error}", context.agent);
+                }
+            });
+        }
+    }
+
     pub async fn create_scoped(
         self: &Arc<Self>,
         agents: &[String],
@@ -298,6 +333,7 @@ impl Manager {
             let session = session.clone();
             tokio::spawn(async move { manager.lane_loop(session, lane, receiver).await });
         }
+        self.warm_acp_lanes(&session);
         Ok((self.summary(&session).await, secret))
     }
 
@@ -824,7 +860,7 @@ impl Manager {
             return;
         };
 
-        let (context_view, digest) = context_snapshot(&session.context, &spec.turn.context_refs());
+        let (context_view, digest) = context_snapshot(&session.context, &spec.context_refs());
         let input_ids = turn
             .inputs
             .iter()
@@ -970,6 +1006,15 @@ impl Manager {
             Ok(()) => {
                 turn.state = TurnState::Done;
                 turn.output = output.clone();
+                // Before `turn.finished`, not after. Everything downstream
+                // treats that event as "this turn is done" and acts on it: the
+                // room view, `send --follow`, the editor seat. Writing what the
+                // turn produced afterwards means a message sent the instant a
+                // turn ends is answered against the context of the turn before
+                // it — which reads as an agent that cannot see what the agent
+                // beside it just said, intermittently.
+                self.apply_context_rules(&session.id, &spec, &lane.agent, &output, &raw)
+                    .await;
                 let _ = self
                     .events
                     .append(
@@ -983,8 +1028,6 @@ impl Manager {
                 if output.trim().is_empty() {
                     let _ = self.events.append(&session.id, "turn.empty", &lane.agent, &turn.id, Some(json!({"parts": raw.len(), "reason": "the agent sent no readable text"}))).await;
                 }
-                self.apply_context_rules(&session.id, &spec, &lane.agent, &output, &raw)
-                    .await;
             }
         }
     }

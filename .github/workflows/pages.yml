@@ -16,6 +16,7 @@ on:
       - 'site/**'
       - 'docs/media/**'
       - 'install.sh'
+      - 'openapi.yaml'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -42,15 +43,24 @@ jobs:
           cp -R site/. _site/
           cp docs/media/room.gif _site/media/room.gif
           cp install.sh _site/install.sh
+          cp openapi.yaml _site/openapi.yaml
 
       - name: The installer is valid shell
         run: sh -n _site/install.sh
 
       - name: Check the page references files that exist
         run: |
-          for f in og.png media/room.gif install.sh; do
+          for f in 404.html og.png media/room.gif install.sh robots.txt sitemap.xml llms.txt llms-full.txt openapi.yaml; do
             test -f "_site/$f" || { echo "missing: $f"; exit 1; }
           done
+
+      - name: Check search and agent discovery metadata
+        run: |
+          grep -q '<link rel="canonical" href="https://oryxa.in/">' _site/index.html
+          grep -q 'application/ld+json' _site/index.html
+          grep -q 'Sitemap: https://oryxa.in/sitemap.xml' _site/robots.txt
+          grep -q '<loc>https://oryxa.in/</loc>' _site/sitemap.xml
+          grep -q 'https://oryxa.in/openapi.yaml' _site/llms.txt
 
       - uses: actions/upload-pages-artifact@v3
         with:
