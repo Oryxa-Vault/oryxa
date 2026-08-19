@@ -64,6 +64,49 @@ blocks its lane until someone decides, so the request is put in front of you
 with the agent's own options and answered with one key. Nothing else about the
 room is interrupted: other lanes keep running while one waits.
 
+## In an editor
+
+```
+oryxa acp                   serve a room to an editor over ACP
+```
+
+Not run by hand. An editor launches it, and one ACP session is one Oryxa room —
+which makes the agent panel a seat in that room rather than a private chat. The
+person in the editor sees every agent answer, attributed, and sees what a
+colleague typed in a terminal on the other side of the room. Cancelling in the
+panel cancels the room's turns.
+
+In Zed, `~/.config/zed/settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "Oryxa": {
+      "command": "/absolute/path/to/oryxa",
+      "args": ["acp", "--agents", "claude-code-local,codex-local"],
+      "env": {
+        "ORYXA_CONNECTORS": "/absolute/path/to/your/connectors",
+        "ORYXA_WORKSPACE": "/a/checkout/an/agent/may/write/to"
+      }
+    }
+  }
+}
+```
+
+Then pick **Oryxa** in the agent panel. With no server running it starts one on
+the usual port, so `oryxa` in a terminal joins the same room; with one already
+running it attaches, and the room outlives the editor.
+
+Permission requests are the one thing the panel does not answer. The room is the
+permission authority, so the panel says who is waiting and the decision is made
+in the room view or with `oryxa approve`.
+
+| | |
+|---|---|
+| `--agents a,b` | the agents a new room is opened with |
+| `--room ID` | join this room instead of opening one |
+| `--as NAME` | who the person in the editor speaks as |
+
 ## Server
 
 ```

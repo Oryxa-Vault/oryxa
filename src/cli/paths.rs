@@ -33,11 +33,20 @@ pub fn data_dir() -> Option<PathBuf> {
 
 /// The connector directory a local runtime should read.
 ///
-/// `./connectors` first, because inside a clone that is where the working
+/// `ORYXA_CONNECTORS` first, because every other command takes it and a runtime
+/// started on your behalf should not be the one place it is ignored — an editor
+/// launching this is setting environment, not passing flags.
+///
+/// Then `./connectors`, because inside a clone that is where the working
 /// examples are and running there should use them. Otherwise the user's own,
 /// which is what an installed binary in an unrelated directory should read
 /// rather than reporting that a room has no agents.
 pub fn connectors_dir() -> PathBuf {
+    if let Ok(named) = env::var("ORYXA_CONNECTORS")
+        && !named.trim().is_empty()
+    {
+        return PathBuf::from(named);
+    }
     let local = PathBuf::from("./connectors");
     if local.is_dir() {
         return local;

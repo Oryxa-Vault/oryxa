@@ -369,17 +369,38 @@ impl Registry {
 mod tests {
     use super::*;
 
+    /// How many connector files a directory ships, so the assertions below are
+    /// about every file being loaded rather than about a number that has to be
+    /// edited each time someone adds one.
+    fn yaml_files(directory: &str) -> usize {
+        std::fs::read_dir(directory)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().is_file())
+            .filter(|entry| {
+                matches!(
+                    entry.path().extension().and_then(|part| part.to_str()),
+                    Some("yaml" | "yml")
+                )
+            })
+            .count()
+    }
+
     #[test]
     fn every_shipped_connector_parses() {
         let registry = Registry::new();
         let count = registry.load_dir("connectors").unwrap();
-        assert_eq!(count, 9);
+        assert_eq!(count, yaml_files("connectors"));
+        assert!(count > 0, "the connector directory is empty");
         assert!(registry.get("mock-json").is_some());
-        assert!(
-            registry
-                .get("codex-local")
-                .is_some_and(|spec| spec.is_acp())
-        );
+        // Both coding agents are reachable over ACP, which is the transport an
+        // editor launches them with too.
+        for agent in ["codex-local", "claude-code-local"] {
+            assert!(
+                registry.get(agent).is_some_and(|spec| spec.is_acp()),
+                "{agent} should be an ACP connector"
+            );
+        }
         assert_eq!(
             registry
                 .get("codex")
@@ -396,7 +417,10 @@ mod tests {
     #[test]
     fn templates_parse() {
         let registry = Registry::new();
-        assert_eq!(registry.load_dir("connectors/templates").unwrap(), 7);
+        assert_eq!(
+            registry.load_dir("connectors/templates").unwrap(),
+            yaml_files("connectors/templates")
+        );
     }
 
     #[test]

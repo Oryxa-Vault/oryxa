@@ -4,6 +4,7 @@
 //! implementation. Public behavior is defined by `openapi.yaml`, the connector
 //! files, and the existing event semantics; this crate must preserve them.
 
+pub mod acp_server;
 pub mod api;
 pub mod cli;
 pub mod connector;

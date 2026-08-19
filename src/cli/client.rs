@@ -168,6 +168,24 @@ impl Client {
     }
 }
 
+/// Whether something is answering as an Oryxa server.
+///
+/// Deliberately impatient: this runs before the interface is on screen, and a
+/// server that is not there should cost a moment rather than the request
+/// timeout above.
+pub async fn reachable(base: &str) -> bool {
+    let Ok(http) = reqwest::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()
+    else {
+        return false;
+    };
+    http.get(format!("{base}/health"))
+        .send()
+        .await
+        .is_ok_and(|response| response.status().is_success())
+}
+
 fn server_error(status: StatusCode, raw: &[u8]) -> String {
     #[derive(serde::Deserialize)]
     struct Body {

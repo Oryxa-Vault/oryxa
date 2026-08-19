@@ -1,13 +1,28 @@
-# Local Codex integration over the Agent Client Protocol. The executable paths
-# are supplied by the launcher so this trusted connector remains portable.
+# Codex over the Agent Client Protocol.
+#
+# One long-lived subprocess and ACP session per room-agent lane, which is what
+# makes turns ordered within the agent, cancellable, and resumable: this adapter
+# advertises loadSession, so a room comes back after a server restart rather
+# than starting the conversation again.
+#
+# ACP agents are local subprocesses, so this connector must be loaded from a
+# trusted file — it cannot be registered through the runtime HTTP API.
+#
+# The package and version are the ones the ACP registry pins, which is the same
+# adapter an editor would launch.
+#
+#   export ORYXA_NPX=/path/to/npx                 # any Node 20+ install
+#   export ORYXA_NODE_PATH=/path/to/node/bin      # the directory npx needs on PATH
+#   export ORYXA_WORKSPACE=/path/to/a/checkout    # it can write here
 name: codex-local
 
 acp:
-  command: "{{env.ORYXA_PNPM}}"
-  args: [dlx, "@agentclientprotocol/codex-acp@1.3.0"]
-  cwd: "{{workspace}}"
+  command: "{{env.ORYXA_NPX}}"
+  args: [-y, "@agentclientprotocol/codex-acp@1.4.0"]
+  # Named rather than taken from the room, because this agent can write here.
+  cwd: "{{env.ORYXA_WORKSPACE}}"
   env:
-    PATH: "{{env.ORYXA_NODE_PATH}}:/usr/bin:/bin"
+    PATH: "{{env.ORYXA_NODE_PATH}}:/usr/local/bin:/usr/bin:/bin"
     INITIAL_AGENT_MODE: agent
     NO_BROWSER: "1"
 

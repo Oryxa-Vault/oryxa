@@ -3,9 +3,10 @@ use std::{net::SocketAddr, path::PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use oryxa::{
+    acp_server,
     cli::commands::{self, ServerOptions},
     connector::{Executor, Registry, RenderContext},
-    runtime::{Config, Runtime},
+    runtime::{Config, Runtime, attach_or_start},
     session::who_wakes,
     tui,
 };
@@ -54,6 +55,8 @@ enum Command {
     Key(Key),
     /// Answer a coding agent waiting for permission.
     Approve(Approve),
+    /// Serve a room to an editor over the Agent Client Protocol.
+    Acp(Acp),
 }
 
 #[derive(Args)]
@@ -219,6 +222,26 @@ struct Approve {
     options: ServerOptions,
 }
 
+/// Oryxa as an ACP agent, launched by an editor rather than by a person.
+///
+/// stdout is the protocol's channel in this mode, so nothing here may print to
+/// it. Anything worth saying goes to stderr, where the editor collects it as
+/// the agent's log.
+#[derive(Args)]
+struct Acp {
+    /// The agents a new room is opened with.
+    #[arg(long, value_delimiter = ',', default_value = "claude-code,codex")]
+    agents: Vec<String>,
+    /// Join this room instead of opening one.
+    #[arg(long)]
+    room: Option<String>,
+    /// Who the person in the editor speaks as.
+    #[arg(long = "as", default_value_t = speaker())]
+    author: String,
+    #[command(flatten)]
+    options: ServerOptions,
+}
+
 /// The name a message is attributed to when nobody says otherwise.
 fn speaker() -> String {
     std::env::var("USER").unwrap_or_else(|_| "cli".into())
@@ -265,6 +288,7 @@ async fn main() -> Result<()> {
             .await
         }
         Some(Command::Key(args)) => commands::key(args.session, args.author, args.options).await,
+        Some(Command::Acp(args)) => acp(args).await,
         Some(Command::Approve(args)) => {
             commands::approve(
                 args.session,
@@ -333,6 +357,28 @@ async fn serve(options: Serve) -> Result<()> {
     started.serve().await
 }
 
+async fn acp(args: Acp) -> Result<()> {
+    let (client, local) = attach_or_start(
+        &args.options.server,
+        &args.options.token,
+        args.options.secret.clone(),
+    )
+    .await?;
+    if local.is_some() {
+        eprintln!(
+            "oryxa: no server was running, so this agent started one at {}",
+            client.base()
+        );
+    }
+    acp_server::serve(acp_server::Config {
+        client,
+        agents: args.agents,
+        room: args.room,
+        author: args.author,
+    })
+    .await
+}
+
 fn agents(options: ConnectorOptions) -> Result<()> {
     let registry = load_registry(&options.connectors)?;
     let specs = registry.list();
@@ -387,9 +433,40 @@ fn which(options: Which) -> Result<()> {
     } else {
         println!("\n  {}\n", spec.name);
         if let Some(acp) = &spec.acp {
+            let render = RenderContext {
+                vars: spec.vars.clone(),
+                ..Default::default()
+            };
             println!("  {:<12} ACP v1 over stdio", "transport");
             println!("  {:<12} {} {}", "command", acp.command, acp.args.join(" "));
             println!("  {:<12} {}", "workspace", acp.cwd);
+            // An ACP command is usually written against the environment, and an
+            // unset variable renders as nothing — which fails at spawn time with
+            // an error about a program called "". Saying what it resolved to is
+            // the whole reason this command exists.
+            let command = render.render_string(&acp.command);
+            let workspace = render.render_string(&acp.cwd);
+            if command != acp.command || workspace != acp.cwd {
+                println!();
+                println!(
+                    "  {:<12} {}",
+                    "resolves to",
+                    if command.is_empty() {
+                        "(nothing — the variable is unset)".into()
+                    } else {
+                        command
+                    }
+                );
+                println!(
+                    "  {:<12} {}",
+                    "workspace",
+                    if workspace.is_empty() {
+                        "(nothing — the variable is unset)".into()
+                    } else {
+                        workspace
+                    }
+                );
+            }
         } else {
             println!("  {:<12} {}", "base", spec.base);
             if resolved != spec.base {

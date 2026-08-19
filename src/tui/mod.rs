@@ -9,9 +9,9 @@
 pub mod app;
 mod ui;
 
-use std::{io::Stdout, path::PathBuf, time::Duration};
+use std::{io::Stdout, path::PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use crossterm::{
     ExecutableCommand,
     event::{
@@ -25,75 +25,18 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::mpsc;
 
 use crate::{
-    cli::{Client, commands::ServerOptions, paths},
-    runtime::{Config, Runtime},
+    cli::{Client, commands::ServerOptions},
+    runtime::attach_or_start,
     tui::app::{App, Screen},
 };
 
 pub async fn run(options: ServerOptions) -> Result<()> {
-    let (client, local) = connect(&options).await?;
+    let (client, local) =
+        attach_or_start(&options.server, &options.token, options.secret.clone()).await?;
     let mut terminal = enter()?;
     let result = loop_until_quit(&mut terminal, client, local).await;
     leave(terminal)?;
     result
-}
-
-/// Finds a runtime, or becomes one. The path comes back when it became one, so
-/// the interface can say where that runtime read its connectors — which is the
-/// only thing a fresh install needs to know and cannot guess.
-///
-/// An address given on the command line is a statement that the server is
-/// somewhere else, so failing to reach it is an error rather than a reason to
-/// quietly start a second one and show an empty room list.
-async fn connect(options: &ServerOptions) -> Result<(Client, Option<PathBuf>)> {
-    let named = !options.server.trim().is_empty() || std::env::var("ORYXA_URL").is_ok();
-    let client = Client::new(&options.server, &options.token, options.secret.clone());
-    if reachable(client.base()).await {
-        return Ok((client, None));
-    }
-    if named {
-        bail!(
-            "cannot reach {} — is it running?\n  leave --server off to run a local runtime instead",
-            client.base()
-        );
-    }
-
-    let event_file = paths::data_dir()
-        .context("no home directory, so there is nowhere to keep the event log")?
-        .join("events.log");
-    if let Some(parent) = event_file.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-    }
-    let connectors = paths::connectors_dir();
-    let runtime = Runtime::bind(Config {
-        // Loopback, not 0.0.0.0. This runtime has no token and belongs to one
-        // person; binding it to every interface would put their rooms and their
-        // agents' write access on the local network.
-        addr: ([127, 0, 0, 1], 0).into(),
-        connectors: connectors.clone(),
-        event_file: Some(event_file),
-        ..Config::default()
-    })
-    .await?;
-    let base = format!("http://{}", runtime.addr);
-    runtime.spawn();
-    Ok((
-        Client::new(&base, &options.token, options.secret.clone()),
-        Some(connectors),
-    ))
-}
-
-async fn reachable(base: &str) -> bool {
-    let Ok(http) = reqwest::Client::builder()
-        .timeout(Duration::from_millis(1500))
-        .build()
-    else {
-        return false;
-    };
-    http.get(format!("{base}/health"))
-        .send()
-        .await
-        .is_ok_and(|response| response.status().is_success())
 }
 
 type Screen0 = Terminal<CrosstermBackend<Stdout>>;

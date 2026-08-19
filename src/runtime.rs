@@ -12,10 +12,69 @@ use tokio::net::TcpListener;
 
 use crate::{
     api::{AppState, restore_agents, router},
+    cli::{Client, client::reachable, paths},
     connector::{Executor, Origin, Registry},
     events::{FileStore, MemoryStore, PostgresStore, Store},
     session::Manager,
 };
+
+/// The port everything else looks on. A runtime started for one surface should
+/// be joinable from the others.
+pub const DEFAULT_PORT: u16 = 8080;
+
+/// Finds a runtime, or becomes one.
+///
+/// The path comes back when it became one, so a caller can say where that
+/// runtime read its connectors — the one thing a fresh install needs to know
+/// and cannot guess.
+///
+/// An address given on the command line is a statement that the server is
+/// somewhere else, so failing to reach it is an error rather than a reason to
+/// quietly start a second one and show an empty room list.
+pub async fn attach_or_start(
+    server: &str,
+    token: &str,
+    secret: Option<String>,
+) -> Result<(Client, Option<PathBuf>)> {
+    let named = !server.trim().is_empty() || std::env::var("ORYXA_URL").is_ok();
+    let client = Client::new(server, token, secret.clone());
+    if reachable(client.base()).await {
+        return Ok((client, None));
+    }
+    if named {
+        anyhow::bail!(
+            "cannot reach {} — is it running?\n  leave --server off to run a local runtime instead",
+            client.base()
+        );
+    }
+
+    let event_file = paths::data_dir()
+        .context("no home directory, so there is nowhere to keep the event log")?
+        .join("events.log");
+    if let Some(parent) = event_file.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    let connectors = paths::connectors_dir();
+    let config = |port| Config {
+        // Loopback, not 0.0.0.0. This runtime has no token and belongs to one
+        // person; binding it to every interface would put their rooms and their
+        // agents' write access on the local network.
+        addr: ([127, 0, 0, 1], port).into(),
+        connectors: connectors.clone(),
+        event_file: Some(event_file.clone()),
+        ..Config::default()
+    };
+    // The usual port first, so a room opened here can be joined from a terminal
+    // or a browser without being told a number. Something else already holding
+    // it is not a reason to refuse to run.
+    let runtime = match Runtime::bind(config(DEFAULT_PORT)).await {
+        Ok(runtime) => runtime,
+        Err(_) => Runtime::bind(config(0)).await?,
+    };
+    let base = format!("http://{}", runtime.addr);
+    runtime.spawn();
+    Ok((Client::new(&base, token, secret), Some(connectors)))
+}
 
 pub struct Config {
     pub addr: SocketAddr,

@@ -52,8 +52,25 @@ claims one.
 
 ## Claude Code and Codex in one room
 
-Both CLIs already installed and signed in. The shim gives them an HTTP surface,
-and then they are ordinary connectors:
+Both signed in. ACP is the preferred transport, and the adapters are the same
+ones an editor launches — pinned to the versions the ACP registry names, so a
+room and an editor are running identical agents:
+
+```bash
+export ORYXA_NPX=$(command -v npx)            # any Node 20+ install
+export ORYXA_NODE_PATH=$(dirname "$ORYXA_NPX")
+export ORYXA_WORKSPACE=/a/checkout/you/can/throw/away
+
+oryxa check codex-local                       # a real turn, before a room
+oryxa serve &
+oryxa open claude-code-local codex-local
+```
+
+`oryxa which <agent>` prints what those variables resolved to, because an unset
+one renders as nothing and fails at spawn time with an error about a program
+called `""`.
+
+The shim remains the fallback for command-line agents that do not speak ACP:
 
 ```bash
 export ORYXA_SHIM_TOKEN=$(openssl rand -hex 32)
@@ -82,6 +99,22 @@ operator-controlled files, never from the runtime registration API. **Permission
 requests stop the room view and ask**, with the agent's exact options; the
 answer is delivered to the waiting lane, recorded in the event log, and
 reflected everywhere the room is open. From a script, that is `oryxa approve`.
+
+## In your editor
+
+Zed's agent panel can be a seat in the room. `oryxa acp` is Oryxa as an ACP
+agent, so one panel session is one room:
+
+```json
+"agent_servers": {
+  "Oryxa": { "command": "/path/to/oryxa", "args": ["acp", "--agents", "claude-code-local,codex-local"] }
+}
+```
+
+You ask a question in the editor and several agents answer, attributed. A
+colleague types in a terminal and it appears in your panel, with the agents'
+replies to *them*. It is the same room, the same log, and the same permission
+prompts — the seat is a view, not a copy.
 
 ## Connect your own agent
 
