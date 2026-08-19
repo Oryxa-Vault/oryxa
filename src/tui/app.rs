@@ -196,7 +196,9 @@ pub struct App {
     pub screen: Screen,
     pub author: String,
     pub server: String,
-    pub embedded: bool,
+    /// Where the runtime this view started reads its connectors, when it
+    /// started one at all.
+    pub local_connectors: Option<std::path::PathBuf>,
     pub error: Option<String>,
     pub note: Option<String>,
     pub help: bool,
@@ -204,7 +206,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(client: Client, tx: UnboundedSender<Message>, embedded: bool) -> Self {
+    pub fn new(
+        client: Client,
+        tx: UnboundedSender<Message>,
+        local_connectors: Option<std::path::PathBuf>,
+    ) -> Self {
         let server = client.base().to_string();
         let app = Self {
             client,
@@ -215,7 +221,7 @@ impl App {
             }),
             author: std::env::var("USER").unwrap_or_else(|_| "you".into()),
             server,
-            embedded,
+            local_connectors,
             error: None,
             note: None,
             help: false,
@@ -761,7 +767,7 @@ mod tests {
     fn app() -> (App, mpsc::UnboundedReceiver<Message>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (
-            App::new(Client::new("http://127.0.0.1:1", "", None), tx, false),
+            App::new(Client::new("http://127.0.0.1:1", "", None), tx, None),
             rx,
         )
     }

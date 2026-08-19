@@ -156,9 +156,13 @@ impl Client {
         request
     }
 
+    /// The first thing a fresh install runs into, so it says what to do rather
+    /// than only what went wrong.
     fn unreachable(&self, error: reqwest::Error) -> anyhow::Error {
         anyhow!(
-            "cannot reach {}: {error}\n  is the server running? set --server or ORYXA_URL",
+            "cannot reach {}: {error}\n  \
+             `oryxa serve` starts one, `oryxa` opens a room view that brings its own,\n  \
+             and --server (or ORYXA_URL) points at one somewhere else",
             self.base
         )
     }

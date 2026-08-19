@@ -9,7 +9,7 @@
 pub mod app;
 mod ui;
 
-use std::{io::Stdout, time::Duration};
+use std::{io::Stdout, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use crossterm::{
@@ -31,23 +31,25 @@ use crate::{
 };
 
 pub async fn run(options: ServerOptions) -> Result<()> {
-    let (client, embedded) = connect(&options).await?;
+    let (client, local) = connect(&options).await?;
     let mut terminal = enter()?;
-    let result = loop_until_quit(&mut terminal, client, embedded).await;
+    let result = loop_until_quit(&mut terminal, client, local).await;
     leave(terminal)?;
     result
 }
 
-/// Finds a runtime, or becomes one.
+/// Finds a runtime, or becomes one. The path comes back when it became one, so
+/// the interface can say where that runtime read its connectors — which is the
+/// only thing a fresh install needs to know and cannot guess.
 ///
 /// An address given on the command line is a statement that the server is
 /// somewhere else, so failing to reach it is an error rather than a reason to
 /// quietly start a second one and show an empty room list.
-async fn connect(options: &ServerOptions) -> Result<(Client, bool)> {
+async fn connect(options: &ServerOptions) -> Result<(Client, Option<PathBuf>)> {
     let named = !options.server.trim().is_empty() || std::env::var("ORYXA_URL").is_ok();
     let client = Client::new(&options.server, &options.token, options.secret.clone());
     if reachable(client.base()).await {
-        return Ok((client, false));
+        return Ok((client, None));
     }
     if named {
         bail!(
@@ -62,12 +64,13 @@ async fn connect(options: &ServerOptions) -> Result<(Client, bool)> {
     if let Some(parent) = event_file.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
+    let connectors = paths::connectors_dir();
     let runtime = Runtime::bind(Config {
         // Loopback, not 0.0.0.0. This runtime has no token and belongs to one
         // person; binding it to every interface would put their rooms and their
         // agents' write access on the local network.
         addr: ([127, 0, 0, 1], 0).into(),
-        connectors: paths::connectors_dir(),
+        connectors: connectors.clone(),
         event_file: Some(event_file),
         ..Config::default()
     })
@@ -76,7 +79,7 @@ async fn connect(options: &ServerOptions) -> Result<(Client, bool)> {
     runtime.spawn();
     Ok((
         Client::new(&base, &options.token, options.secret.clone()),
-        true,
+        Some(connectors),
     ))
 }
 
@@ -121,9 +124,13 @@ fn leave(mut terminal: Screen0) -> Result<()> {
     Ok(())
 }
 
-async fn loop_until_quit(terminal: &mut Screen0, client: Client, embedded: bool) -> Result<()> {
+async fn loop_until_quit(
+    terminal: &mut Screen0,
+    client: Client,
+    local: Option<PathBuf>,
+) -> Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let mut app = App::new(client, tx, embedded);
+    let mut app = App::new(client, tx, local);
     let mut keys = EventStream::new();
 
     loop {

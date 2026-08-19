@@ -82,7 +82,7 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
             }
         }
     }
-    let right = if app.embedded {
+    let right = if app.local_connectors.is_some() {
         format!("local runtime · {} ", app.server)
     } else {
         format!("{} ", app.server)
@@ -169,13 +169,17 @@ fn draw_new_room(frame: &mut Frame, app: &mut App, area: Rect) {
         return;
     };
     if screen.connectors.is_empty() {
-        frame.render_widget(
-            Paragraph::new(
-                "\n  this server has no connectors.\n\n  connectors are files — point the runtime at a directory of them.",
-            )
-            .style(Style::new().fg(DIM)),
-            area,
-        );
+        // A fresh install has no agents and no way to guess where they go, so
+        // the runtime this view started says which directory it read.
+        let text = match &app.local_connectors {
+            Some(path) => format!(
+                "\n  no agents yet.\n\n  connectors are files, and this runtime reads them from\n\n    {}\n\n  put one there and press r.",
+                path.display()
+            ),
+            None => "\n  this server has no connectors.\n\n  connectors are files — point the runtime at a directory of them."
+                .into(),
+        };
+        frame.render_widget(Paragraph::new(text).style(Style::new().fg(DIM)), area);
         return;
     }
     let items = screen
