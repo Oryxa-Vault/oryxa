@@ -272,9 +272,24 @@ impl Manager {
                 vars: spec.vars.clone(),
                 ..Default::default()
             };
+            let events = self.events.clone();
+            let room = session.id.clone();
             tokio::spawn(async move {
                 if let Err(error) = executor.open(&spec, &context).await {
-                    eprintln!("oryxa: {} did not start early: {error}", context.agent);
+                    // Into the room, not just onto stderr. A room whose agent
+                    // cannot start looks perfectly well until somebody speaks
+                    // to it, and then fails in a way that reads as the message
+                    // being at fault. Whoever opened the room should be told
+                    // while they are still looking at it.
+                    let _ = events
+                        .append(
+                            &room,
+                            "lane.unavailable",
+                            &context.agent,
+                            "",
+                            Some(json!({"error": error.to_string()})),
+                        )
+                        .await;
                 }
             });
         }

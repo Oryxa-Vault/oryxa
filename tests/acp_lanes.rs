@@ -542,3 +542,41 @@ async fn without_express_the_request_still_waits() {
     let pending = wait_interaction(&manager, &summary.id).await;
     assert_eq!(pending.agent, "guarded");
 }
+
+/// A room whose agent cannot start says so when it opens.
+///
+/// Otherwise it looks perfectly well until somebody speaks to it, and then
+/// fails in a way that reads as the message being at fault — which is exactly
+/// how an unset workspace variable presents.
+#[tokio::test]
+async fn a_lane_that_cannot_start_is_reported_into_the_room() {
+    let registry = Registry::new();
+    let mut broken = acp_spec("alpha", 0);
+    // The shape of the real mistake: a template that renders to nothing.
+    broken.acp.as_mut().unwrap().cwd = "{{env.ORYXA_NOT_SET_ANYWHERE}}".into();
+    registry.put(broken).unwrap();
+    let events = Arc::new(MemoryStore::new());
+    let manager = Manager::new(registry, Executor::new(), events.clone());
+    let (summary, _) = manager.create(&["alpha".into()]).await.unwrap();
+
+    // Nobody says anything to it. The room should still report the problem.
+    let mut reported = None;
+    for _ in 0..300 {
+        let recorded = events.since(&summary.id, 0).await.unwrap();
+        if let Some(event) = recorded
+            .iter()
+            .find(|event| event.kind == "lane.unavailable")
+        {
+            reported = Some(event.clone());
+            break;
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    let reported = reported.expect("the room is told its agent could not start");
+    assert_eq!(reported.actor, "alpha");
+    let error = reported.data.unwrap_or_default()["error"].to_string();
+    assert!(
+        error.contains("workspace"),
+        "the reason should name what is missing: {error}"
+    );
+}

@@ -519,6 +519,12 @@ impl App {
                 let id = room.id.clone();
                 self.load_interactions(id);
             }
+            // The agent could not be started at all, which is not a turn
+            // failing — there was no turn.
+            "lane.unavailable" => {
+                let error = data["error"].as_str().unwrap_or_default();
+                room.note(format!("{} could not start: {error}", event.actor));
+            }
             "context.appended" => {
                 let key = data["key"].as_str().unwrap_or_default();
                 room.note(format!("{} appended to {key}", event.actor));
