@@ -5,6 +5,8 @@
 //! and scrolling by source line disagree the moment anything is longer than the
 //! pane, which reads as the view jumping while an agent is speaking.
 
+use std::{collections::BTreeMap, time::Duration};
+
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -18,6 +20,9 @@ use crate::tui::app::{App, Screen, Voice, context_lines};
 
 /// Restrained on purpose: green is the product's signal, and everything else
 /// is there to separate a person from an agent from a note.
+/// Braille frames, because they animate in place without changing width.
+const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 const ACCENT: Color = Color::Green;
 const DIM: Color = Color::DarkGray;
 const AGENT_COLORS: [Color; 6] = [
@@ -73,12 +78,28 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
         Screen::NewRoom(_) => spans.push(Span::styled("new room", Style::new().bold())),
         Screen::Room(room) => {
             spans.push(Span::styled(room.id.clone(), Style::new().bold()));
-            spans.push(Span::styled(
-                format!("  {}", room.agents.join(", ")),
-                Style::new().fg(DIM),
-            ));
-            if room.busy() {
-                spans.push(Span::styled("  ● thinking", Style::new().fg(ACCENT)));
+            // The roster is the status display. An agent that is working turns
+            // bright, spins and counts — a coding agent can be quiet for
+            // minutes, and the only question anyone has while waiting is
+            // whether it is still alive.
+            let working: BTreeMap<&str, Duration> = room
+                .running
+                .values()
+                .map(|(agent, since)| (agent.as_str(), since.elapsed()))
+                .collect();
+            for agent in &room.agents {
+                spans.push(Span::raw("  "));
+                match working.get(agent.as_str()) {
+                    Some(elapsed) => spans.push(Span::styled(
+                        format!(
+                            "{} {agent} {}s",
+                            SPINNER[app.tick % SPINNER.len()],
+                            elapsed.as_secs()
+                        ),
+                        Style::new().fg(ACCENT).bold(),
+                    )),
+                    None => spans.push(Span::styled(agent.clone(), Style::new().fg(DIM))),
+                }
             }
             if !room.live {
                 spans.push(Span::styled(

@@ -10,7 +10,7 @@ pub mod app;
 mod ui;
 pub mod welcome;
 
-use std::{io::Stdout, path::PathBuf};
+use std::{io::Stdout, path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use crossterm::{
@@ -112,10 +112,15 @@ async fn loop_until_quit(
         None => String::new(),
     };
     let mut keys = EventStream::new();
+    // Fast enough to read as motion, slow enough to be free. Only the frame
+    // counter advances; ratatui writes the cells that changed.
+    let mut clock = tokio::time::interval(Duration::from_millis(120));
+    clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         tokio::select! {
+            _ = clock.tick() => app.tick = app.tick.wrapping_add(1),
             event = keys.next() => match event {
                 Some(Ok(event)) => on_terminal_event(&mut app, event),
                 Some(Err(error)) => return Err(error.into()),
