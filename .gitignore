@@ -14,6 +14,10 @@
 # Connectors are configuration and may point at internal hosts or carry
 # credentials in headers. The templates and verified examples are tracked
 # explicitly; anything else a user drops in is theirs.
+#
+# A connector that ships needs a line here as well as a file. Forgetting is
+# silent — `git add -A` skips it, local tests pass against a file the checkout
+# does not have, and CI is the first thing to notice.
 /connectors/*
 !/connectors/templates/
 !/connectors/mock-*.yaml
@@ -25,6 +29,7 @@
 # run lives in shim.yaml, which is the file to think about before sharing.
 !/connectors/claude-code.yaml
 !/connectors/codex.yaml
+!/connectors/claude-code-acp.yaml
 !/connectors/codex-acp.yaml
 # bee-agui.yaml stays local: it names a private internal service. The generic
 # AG-UI template covers the same protocol for everyone else.
