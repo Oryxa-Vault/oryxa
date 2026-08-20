@@ -1,4 +1,11 @@
-# Publishes site/ to GitHub Pages, at oryxa.in (site/CNAME).
+# Publishes site/ to GitHub Pages.
+#
+# No CNAME file, deliberately. oryxa.in already serves a different site, and a
+# CNAME here would claim that name for Pages the moment this runs. The install
+# URL reaches this build through a redirect at the edge instead, which is why
+# install.sh must keep working when it is fetched under another hostname — it
+# does, because everything it downloads comes from the GitHub release, not from
+# wherever the script itself was served.
 #
 # The recording lives once, in docs/media/, because the README points at it there
 # and a second copy in site/ would be the one that goes stale. It is copied into
