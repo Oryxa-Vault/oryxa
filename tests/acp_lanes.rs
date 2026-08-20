@@ -157,7 +157,7 @@ async fn cancelling_a_turn_cancels_its_pending_acp_permission() {
         .unwrap();
     wait_interaction(&manager, &summary.id).await;
 
-    manager.cancel(&summary.id, "alice").await.unwrap();
+    manager.cancel(&summary.id, "alice", None).await.unwrap();
     let history = wait_history(&manager, &summary.id, 1).await;
     assert_eq!(history[0].state, TurnState::Cancelled);
     for _ in 0..100 {
@@ -308,7 +308,7 @@ async fn cancellation_reaches_the_active_acp_lane() {
     wait_running(&manager, &summary.id).await;
 
     let started = Instant::now();
-    manager.cancel(&summary.id, "alice").await.unwrap();
+    manager.cancel(&summary.id, "alice", None).await.unwrap();
     let history = wait_history(&manager, &summary.id, 1).await;
     assert_eq!(history[0].state, TurnState::Cancelled);
     assert!(started.elapsed() < Duration::from_millis(600));
@@ -388,4 +388,85 @@ async fn concurrent_callers_share_one_lane() {
         "eight callers started {} lanes: {sessions:?}",
         sessions.len()
     );
+}
+
+/// Stopping one agent must leave the others working.
+///
+/// The lanes are independent, so cancelling the room to stop one of them throws
+/// away whatever every other agent had in flight. In a room that exists to run
+/// several at once, that is the common case rather than the rare one.
+#[tokio::test]
+async fn stopping_one_agent_leaves_the_others_running() {
+    let registry = Registry::new();
+    registry.put(acp_spec("alpha", 3_000)).unwrap();
+    registry.put(acp_spec("beta-local", 3_000)).unwrap();
+    let manager = Manager::new(registry, Executor::new(), Arc::new(MemoryStore::new()));
+    let (summary, _) = manager
+        .create(&["alpha".into(), "beta-local".into()])
+        .await
+        .unwrap();
+    manager
+        .submit(
+            &summary.id,
+            Author::claimed("alice"),
+            "both of you start",
+            &["alpha".into(), "beta-local".into()],
+        )
+        .await
+        .unwrap();
+    wait_running(&manager, &summary.id).await;
+
+    // Written the way a person writes it: `beta` for `beta-local`.
+    manager
+        .cancel(&summary.id, "alice", Some("beta"))
+        .await
+        .unwrap();
+
+    let history = wait_history(&manager, &summary.id, 2).await;
+    let state = |agent: &str| {
+        history
+            .iter()
+            .find(|turn| turn.agent == agent)
+            .unwrap_or_else(|| panic!("{agent} has no turn in {history:?}"))
+            .state
+    };
+    assert_eq!(state("beta-local"), TurnState::Cancelled, "{history:?}");
+    assert_eq!(
+        state("alpha"),
+        TurnState::Done,
+        "stopping one agent stopped the other: {history:?}"
+    );
+}
+
+/// Naming an agent that is not in the room is a different mistake from naming
+/// one that happens to be idle, and saying so is the difference between "fix
+/// the name" and "there was nothing to stop".
+#[tokio::test]
+async fn stopping_an_agent_that_is_not_here_says_so() {
+    let registry = Registry::new();
+    registry.put(acp_spec("alpha", 2_000)).unwrap();
+    let manager = Manager::new(registry, Executor::new(), Arc::new(MemoryStore::new()));
+    let (summary, _) = manager.create(&["alpha".into()]).await.unwrap();
+    manager
+        .submit(
+            &summary.id,
+            Author::claimed("alice"),
+            "wait",
+            &["alpha".into()],
+        )
+        .await
+        .unwrap();
+    wait_running(&manager, &summary.id).await;
+
+    let error = manager
+        .cancel(&summary.id, "alice", Some("nobody"))
+        .await
+        .expect_err("an agent that is not in the room cannot be stopped");
+    assert!(
+        error.to_string().contains("nobody"),
+        "the error should name it: {error}"
+    );
+    // And the agent that is here was left alone.
+    let history = wait_history(&manager, &summary.id, 1).await;
+    assert_eq!(history[0].state, TurnState::Done);
 }

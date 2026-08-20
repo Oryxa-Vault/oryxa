@@ -425,27 +425,66 @@ impl Manager {
         Ok(())
     }
 
-    pub async fn cancel(&self, id: &str, actor: &str) -> Result<(), SessionError> {
+    /// Stops running turns: one agent's, or the whole room's.
+    ///
+    /// Naming one matters because the lanes are independent. Stopping the room
+    /// to stop one agent throws away the work every other agent had in flight,
+    /// and in a room that exists to run several at once that is the common
+    /// case, not the rare one.
+    ///
+    /// The name is matched the way a person writes it, so `codex` stops
+    /// `codex-local` — the same rule that decides who a message wakes.
+    pub async fn cancel(
+        &self,
+        id: &str,
+        actor: &str,
+        agent: Option<&str>,
+    ) -> Result<(), SessionError> {
         let session = self.session(id).await?;
+        let wanted = agent.map(str::to_ascii_lowercase);
+        let mut named = Vec::new();
         let mut cancellations = Vec::new();
         for lane in session.lanes.values() {
-            if let Some(cancel) = lane.state.lock().await.cancel.clone() {
-                cancellations.push(cancel);
+            if let Some(wanted) = &wanted
+                && !crate::session::names_for(&lane.agent).contains(wanted)
+            {
+                continue;
             }
+            named.push(lane.agent.clone());
+            if let Some(cancel) = lane.state.lock().await.cancel.clone() {
+                cancellations.push((lane.agent.clone(), cancel));
+            }
+        }
+        // "That agent is not in this room" and "that agent is not doing
+        // anything" are different mistakes and need different answers.
+        if let Some(wanted) = &wanted
+            && named.is_empty()
+        {
+            return Err(SessionError::NoAgent(wanted.clone()));
         }
         if cancellations.is_empty() {
             return Err(SessionError::NoTurn);
         }
+        let stopping = cancellations
+            .iter()
+            .map(|(agent, _)| agent.clone())
+            .collect::<Vec<_>>();
         self.events
             .append(
                 id,
                 "turn.cancel_requested",
                 actor,
                 "",
-                Some(json!({"lanes": cancellations.len()})),
+                Some(json!({"lanes": cancellations.len(), "agents": stopping})),
             )
             .await?;
+        // Only the interactions belonging to the lanes being stopped. Answering
+        // for an agent that was left running would strand its turn on a
+        // decision nobody made.
         for interaction in self.executor.pending_interactions(id).await {
+            if !stopping.contains(&interaction.agent) {
+                continue;
+            }
             self.events
                 .append(
                     id,
@@ -456,7 +495,7 @@ impl Manager {
                 )
                 .await?;
         }
-        for cancellation in cancellations {
+        for (_, cancellation) in cancellations {
             cancellation.cancel();
         }
         Ok(())

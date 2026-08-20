@@ -181,6 +181,7 @@ oryxa send <session> TEXT   say something   (--as name, --to agent, -f to follow
 oryxa tail <session>        follow the live stream
 oryxa replay <session>      print the history
 oryxa sessions              list rooms
+oryxa cancel <session>      stop what is running   (--agent NAME for just one)
 oryxa context <session>     read or write shared context
 oryxa key <session> NAME    issue a key that speaks as NAME
 oryxa approve <session>     answer an agent waiting for permission
@@ -193,6 +194,15 @@ SID=$(oryxa open langgraph crewai --json | jq -r .id)
 oryxa send $SID "should we use event sourcing?" -f
 oryxa context $SID --append decisions --value "revisit after the spike"
 oryxa replay $SID
+```
+
+Stopping is per-agent, because the lanes are independent — stopping the room to
+stop one agent throws away what every other agent had in flight. Short names
+work the way they do everywhere else, so `codex` stops `codex-local`:
+
+```bash
+oryxa cancel $SID --agent codex   # the others keep working
+oryxa cancel $SID                 # everything
 ```
 
 `approve` with no other flag lists what is waiting and how to answer it:

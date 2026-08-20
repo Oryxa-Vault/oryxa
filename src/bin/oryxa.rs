@@ -53,6 +53,8 @@ enum Command {
     Context(ContextArgs),
     /// Issue a key that speaks as one name.
     Key(Key),
+    /// Stop what is running: one agent, or the whole room.
+    Cancel(Cancel),
     /// Answer a coding agent waiting for permission.
     Approve(Approve),
     /// Serve a room to an editor over the Agent Client Protocol.
@@ -205,6 +207,16 @@ struct Key {
 }
 
 #[derive(Args)]
+struct Cancel {
+    session: String,
+    /// Stop only this agent. Short names work: `codex` stops `codex-local`.
+    #[arg(long)]
+    agent: Option<String>,
+    #[command(flatten)]
+    options: ServerOptions,
+}
+
+#[derive(Args)]
 struct Approve {
     session: String,
     /// Which request to answer. Only needed when several are waiting.
@@ -289,6 +301,9 @@ async fn main() -> Result<()> {
         }
         Some(Command::Key(args)) => commands::key(args.session, args.author, args.options).await,
         Some(Command::Acp(args)) => acp(args).await,
+        Some(Command::Cancel(args)) => {
+            commands::cancel(args.session, args.agent, args.options).await
+        }
         Some(Command::Approve(args)) => {
             commands::approve(
                 args.session,

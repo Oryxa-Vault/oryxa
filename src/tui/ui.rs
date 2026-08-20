@@ -409,7 +409,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         "↑ ↓ pgup pgdn  scroll · scrolling back to the bottom follows live again",
         "",
         "/context       what the room knows, alongside the transcript",
-        "/cancel        stop every running turn",
+        "/cancel [agent] stop one agent, or every running turn",
         "/close         close the room",
         "/key NAME      issue a key that speaks as NAME, shown once",
         "/as NAME       speak as someone else",

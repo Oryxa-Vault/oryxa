@@ -604,11 +604,24 @@ impl App {
             "quit" | "q" | "exit" => self.quit = true,
             "rooms" => self.leave_room(),
             "new" => self.new_room(),
-            "cancel" => self.post(
-                format!("/v1/sessions/{id}/cancel?author={}", self.author),
-                json!({}),
-                Some("cancelled".into()),
-            ),
+            // `/cancel` stops everything; `/cancel codex` stops one lane and
+            // leaves the others working, which is the whole point of lanes.
+            "cancel" => {
+                let (path, note) = match rest.trim() {
+                    "" => (
+                        format!("/v1/sessions/{id}/cancel?author={}", self.author),
+                        "stopped every running turn".to_string(),
+                    ),
+                    agent => (
+                        format!(
+                            "/v1/sessions/{id}/cancel?author={}&agent={agent}",
+                            self.author
+                        ),
+                        format!("stopped {agent}"),
+                    ),
+                };
+                self.post(path, json!({}), Some(note))
+            }
             "close" => self.post(
                 format!("/v1/sessions/{id}/close?author={}", self.author),
                 json!({}),

@@ -720,9 +720,10 @@ async fn cancel_turn(
 ) -> Result<StatusCode, ApiError> {
     let bound = require_room(&state, &headers, &id).await?;
     let who = identify(&state, &headers, &query.author, &bound)?;
+    let agent = query.agent.trim();
     state
         .manager
-        .cancel(&id, &who.name)
+        .cancel(&id, &who.name, (!agent.is_empty()).then_some(agent))
         .await
         .map_err(ApiError::session)?;
     Ok(StatusCode::ACCEPTED)
@@ -799,6 +800,9 @@ async fn close_session(
 struct ActorQuery {
     #[serde(default)]
     author: String,
+    /// Stop only this agent. Absent stops every running turn in the room.
+    #[serde(default)]
+    agent: String,
 }
 
 async fn get_context(

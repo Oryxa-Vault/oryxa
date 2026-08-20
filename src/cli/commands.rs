@@ -311,6 +311,40 @@ pub async fn context(
     Ok(())
 }
 
+/// Stops what is running: one agent, or the whole room.
+pub async fn cancel(session: String, agent: Option<String>, options: ServerOptions) -> Result<()> {
+    let author = urlencoding(&std::env::var("USER").unwrap_or_else(|_| "cli".into()));
+    let mut path = format!("/v1/sessions/{session}/cancel?author={author}");
+    if let Some(agent) = agent.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+        path.push_str(&format!("&agent={}", urlencoding(agent)));
+    }
+    let stopped: Value = options.client().post(&path, json!({})).await?;
+    if options.json {
+        return print_json(&stopped);
+    }
+    match agent {
+        Some(agent) => println!("\n  stopped {agent}\n"),
+        None => println!("\n  stopped every running turn\n"),
+    }
+    Ok(())
+}
+
+/// Percent-encodes the handful of characters an agent or author name could
+/// carry into a query string.
+fn urlencoding(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => character.to_string(),
+            other => other
+                .to_string()
+                .bytes()
+                .map(|byte| format!("%{byte:02X}"))
+                .collect(),
+        })
+        .collect()
+}
+
 // ---- approvals ----
 
 #[derive(Deserialize)]
