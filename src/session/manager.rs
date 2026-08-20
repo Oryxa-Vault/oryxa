@@ -159,11 +159,22 @@ pub struct Manager {
     executor: Executor,
     events: Arc<dyn EventStore>,
     summariser: String,
+    /// Answer permission requests with the agent's own allow option instead of
+    /// waiting for a person.
+    ///
+    /// This is a real grant: a coding agent can then write to its workspace and
+    /// run what it is configured to run, and nobody is asked first. It exists
+    /// because approving from a second window while you work in a first is the
+    /// friction that gets a room abandoned. The room stays the audit trail —
+    /// an express decision goes through the same resolution path a person's
+    /// does and is recorded as one, attributed to `express` rather than to
+    /// somebody who never saw it.
+    express: bool,
 }
 
 impl Manager {
     pub fn new(registry: Registry, executor: Executor, events: Arc<dyn EventStore>) -> Arc<Self> {
-        Self::configured(registry, executor, events, "")
+        Self::configured(registry, executor, events, "", false)
     }
 
     pub fn configured(
@@ -171,6 +182,7 @@ impl Manager {
         executor: Executor,
         events: Arc<dyn EventStore>,
         summariser: impl Into<String>,
+        express: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
             sessions: Arc::new(RwLock::new(BTreeMap::new())),
@@ -178,6 +190,7 @@ impl Manager {
             executor,
             events,
             summariser: summariser.into(),
+            express,
         })
     }
 
@@ -1089,6 +1102,52 @@ impl Manager {
             .await;
     }
 
+    /// Answers one request on the agent's own terms, under `--express`.
+    ///
+    /// Deliberately the agent's `allow_once` where it offers one, in preference
+    /// to `allow_always`: always is the agent deciding it need not ask again,
+    /// which takes the next action out of the log entirely. Once keeps every
+    /// action a recorded request with a recorded answer, which is the only
+    /// thing that makes this reviewable afterwards.
+    ///
+    /// An agent offering no allow option at all is left waiting for a person.
+    /// Express is a standing yes to what an agent asks for, not a licence to
+    /// invent an answer it did not offer.
+    async fn express_resolve(&self, session: &str, interaction: &str) {
+        let Some(pending) = self.executor.interaction(session, interaction).await else {
+            return;
+        };
+        let chosen = pending
+            .options
+            .iter()
+            .find(|option| option.kind == "allow_once")
+            .or_else(|| {
+                pending
+                    .options
+                    .iter()
+                    .find(|option| option.kind.starts_with("allow"))
+            });
+        let Some(chosen) = chosen else {
+            let _ = self
+                .events
+                .append(
+                    session,
+                    "interaction.express_declined",
+                    "express",
+                    &pending.turn,
+                    Some(json!({
+                        "interaction": pending.id,
+                        "reason": "the agent offered no allow option",
+                    })),
+                )
+                .await;
+            return;
+        };
+        let _ = self
+            .resolve_interaction(session, interaction, "express", Some(&chosen.id))
+            .await;
+    }
+
     async fn cancel_turn(&self, session: &Session, lane: &Lane, turn: &mut Turn) {
         turn.state = TurnState::Cancelled;
         turn.error = "cancelled".into();
@@ -1115,6 +1174,9 @@ impl Manager {
                     })),
                 )
                 .await;
+            if self.express {
+                self.express_resolve(&session.id, interaction).await;
+            }
         }
         let _ = self
             .events
@@ -1962,8 +2024,13 @@ mod tests {
                 .unwrap();
         }
         let events = Arc::new(MemoryStore::new());
-        let manager =
-            Manager::configured(registry.clone(), Executor::new(), events.clone(), "roller");
+        let manager = Manager::configured(
+            registry.clone(),
+            Executor::new(),
+            events.clone(),
+            "roller",
+            false,
+        );
         let (summary, _) = manager.create(&["a".into()]).await.unwrap();
         for index in 1..=(sharedctx::MAX_ITEMS_PER_ENTRY + 10) {
             manager
@@ -1990,7 +2057,7 @@ mod tests {
         assert_eq!(entry.rollup.as_ref().unwrap().covers, 10);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        let restored = Manager::configured(registry, Executor::new(), events, "roller");
+        let restored = Manager::configured(registry, Executor::new(), events, "roller", false);
         restored.rehydrate().await.unwrap();
         let replayed = restored.context(&summary.id).await.unwrap().remove(0);
         assert_eq!(replayed.rollup.unwrap().text, "summary of 10 findings");

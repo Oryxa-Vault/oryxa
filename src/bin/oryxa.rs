@@ -23,6 +23,10 @@ use oryxa::{
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
+    /// Grant every permission an agent asks for, without asking anybody.
+    /// Applies to a runtime this starts, not to one it attaches to.
+    #[arg(short = 'e', long, env = "ORYXA_EXPRESS", default_value_t = false)]
+    express: bool,
     #[command(flatten)]
     options: ServerOptions,
 }
@@ -96,6 +100,9 @@ struct Serve {
     turns_per_min: i32,
     #[arg(long, env = "ORYXA_RESET", default_value_t = false)]
     reset: bool,
+    /// Grant every permission an agent asks for, without asking anybody.
+    #[arg(short = 'e', long, env = "ORYXA_EXPRESS", default_value_t = false)]
+    express: bool,
 }
 
 #[derive(Args)]
@@ -250,6 +257,9 @@ struct Acp {
     /// Who the person in the editor speaks as.
     #[arg(long = "as", default_value_t = speaker())]
     author: String,
+    /// Grant every permission an agent asks for, without asking anybody.
+    #[arg(short = 'e', long, env = "ORYXA_EXPRESS", default_value_t = false)]
+    express: bool,
     #[command(flatten)]
     options: ServerOptions,
 }
@@ -263,7 +273,7 @@ fn speaker() -> String {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        None => tui::run(cli.options).await,
+        None => tui::run(cli.options, cli.express).await,
         Some(Command::Serve(options)) => serve(options).await,
         Some(Command::Agents(options)) => agents(options),
         Some(Command::Which(options)) => which(options),
@@ -342,6 +352,7 @@ async fn serve(options: Serve) -> Result<()> {
         room_turns_per_min: options.room_turns_per_min,
         turns_per_min: options.turns_per_min,
         reset: options.reset,
+        express: options.express,
     })
     .await?;
 
@@ -358,6 +369,9 @@ async fn serve(options: Serve) -> Result<()> {
             "none"
         }
     );
+    if started.express {
+        println!("  ├─ express     ON — every permission granted without asking");
+    }
     println!(
         "  └─ connectors  {} loaded from {}\n",
         started.connectors,
@@ -377,6 +391,7 @@ async fn acp(args: Acp) -> Result<()> {
         &args.options.server,
         &args.options.token,
         args.options.secret.clone(),
+        args.express,
     )
     .await?;
     if local.is_some() {

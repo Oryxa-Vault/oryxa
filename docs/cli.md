@@ -242,6 +242,7 @@ mode 0600, so `--secret` is for joining someone else's.
 | `--turns-per-min N` | turns across the server (default 120, `0` = off) |
 | `--allow-private-agents` | API-registered agents may reach private addresses |
 | `--reset` | erase the log on start (`ORYXA_RESET`) — development only |
+| `-e, --express` | grant every permission without asking (`ORYXA_EXPRESS`) |
 
 What each of these is for: [running.md](running.md).
 
@@ -255,6 +256,44 @@ What each of these is for: [running.md](running.md).
 
 Open to anyone who can reach the port if `--token` is empty, and reaching that
 port is enough to run what is in the config file.
+
+## Express
+
+```bash
+oryxa -e                 # the room view, with its own runtime
+oryxa serve --express
+oryxa acp --express      # the editor seat
+```
+
+`--express` answers every permission request with the agent's own allow option
+instead of waiting for a person. It is a real grant: a coding agent can then
+write anywhere in its workspace and run what its connector permits, and nobody
+is asked first. Point it at a checkout you can throw away, and read
+[SECURITY.md](../SECURITY.md) before using it anywhere you cannot.
+
+Three things it deliberately does not do:
+
+- It never picks **always allow** when the agent also offers **allow once**. Always
+  is the agent deciding it need not ask again, which takes the next action out
+  of the log; once keeps every action a recorded request with a recorded answer.
+- It never invents an answer. An agent offering no allow option at all is left
+  waiting for a person, and the refusal is recorded.
+- It never applies to a server it merely attached to. `--express` configures a
+  runtime you start; a room on someone else's server answers by that server's
+  rules, and the flag says so rather than silently doing nothing.
+
+Every decision goes through the same path a person's does and is recorded the
+same way, attributed to `express`:
+
+```
+interaction.requested            actor=claude-code-local
+interaction.resolution_requested actor=express    allow
+interaction.resolved             actor=express    allow
+```
+
+The room view shows **⚡ express** in the header for as long as it is on, and
+`serve` says so in its startup banner. A mode this consequential should never be
+something you have to remember you turned on.
 
 ## Installing
 

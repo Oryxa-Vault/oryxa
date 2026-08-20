@@ -30,11 +30,16 @@ use crate::{
     tui::app::{App, Screen},
 };
 
-pub async fn run(options: ServerOptions) -> Result<()> {
-    let (client, local) =
-        attach_or_start(&options.server, &options.token, options.secret.clone()).await?;
+pub async fn run(options: ServerOptions, express: bool) -> Result<()> {
+    let (client, local) = attach_or_start(
+        &options.server,
+        &options.token,
+        options.secret.clone(),
+        express,
+    )
+    .await?;
     let mut terminal = enter()?;
-    let result = loop_until_quit(&mut terminal, client, local).await;
+    let result = loop_until_quit(&mut terminal, client, local, express).await;
     leave(terminal)?;
     result
 }
@@ -71,9 +76,13 @@ async fn loop_until_quit(
     terminal: &mut Screen0,
     client: Client,
     local: Option<PathBuf>,
+    express: bool,
 ) -> Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let mut app = App::new(client, tx, local);
+    // Only true when this view started the runtime: attaching to someone
+    // else's server does not change how that server answers.
+    app.express = express && app.local_connectors.is_some();
     let mut keys = EventStream::new();
 
     loop {

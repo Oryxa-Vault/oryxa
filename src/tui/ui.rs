@@ -82,6 +82,12 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
             }
         }
     }
+    if app.express {
+        spans.push(Span::styled(
+            "  ⚡ express",
+            Style::new().fg(Color::Black).bg(Color::Yellow).bold(),
+        ));
+    }
     let right = if app.local_connectors.is_some() {
         format!("local runtime · {} ", app.server)
     } else {

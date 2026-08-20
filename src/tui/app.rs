@@ -199,6 +199,10 @@ pub struct App {
     /// Where the runtime this view started reads its connectors, when it
     /// started one at all.
     pub local_connectors: Option<std::path::PathBuf>,
+    /// Permissions are being granted without asking, and the header says so —
+    /// a mode this consequential must never be something you have to remember
+    /// you turned on.
+    pub express: bool,
     pub error: Option<String>,
     pub note: Option<String>,
     pub help: bool,
@@ -222,6 +226,7 @@ impl App {
             author: std::env::var("USER").unwrap_or_else(|_| "you".into()),
             server,
             local_connectors,
+            express: false,
             error: None,
             note: None,
             help: false,

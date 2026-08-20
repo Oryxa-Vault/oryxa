@@ -35,10 +35,17 @@ pub async fn attach_or_start(
     server: &str,
     token: &str,
     secret: Option<String>,
+    express: bool,
 ) -> Result<(Client, Option<PathBuf>)> {
     let named = !server.trim().is_empty() || std::env::var("ORYXA_URL").is_ok();
     let client = Client::new(server, token, secret.clone());
     if reachable(client.base()).await {
+        if express {
+            eprintln!(
+                "oryxa: --express applies to a runtime this starts, and one is already running at {} — its own setting stands",
+                client.base()
+            );
+        }
         return Ok((client, None));
     }
     if named {
@@ -62,6 +69,7 @@ pub async fn attach_or_start(
         addr: ([127, 0, 0, 1], port).into(),
         connectors: connectors.clone(),
         event_file: Some(event_file.clone()),
+        express,
         ..Config::default()
     };
     // The usual port first, so a room opened here can be joined from a terminal
@@ -91,6 +99,8 @@ pub struct Config {
     pub room_turns_per_min: i32,
     pub turns_per_min: i32,
     pub reset: bool,
+    /// Answer every permission request with the agent's own allow option.
+    pub express: bool,
 }
 
 impl Default for Config {
@@ -108,6 +118,7 @@ impl Default for Config {
             room_turns_per_min: 30,
             turns_per_min: 120,
             reset: false,
+            express: false,
         }
     }
 }
@@ -118,6 +129,7 @@ impl Default for Config {
 /// first request. The room view asks for port 0 and needs the answer.
 pub struct Runtime {
     pub addr: SocketAddr,
+    pub express: bool,
     pub connectors: usize,
     pub restored_agents: usize,
     pub restored_sessions: usize,
@@ -172,6 +184,7 @@ impl Runtime {
             executor.clone(),
             events.clone(),
             config.summariser.clone(),
+            config.express,
         );
         let restored_sessions = manager.rehydrate().await.context("restore sessions")?;
         let connectors = registry.list().len();
@@ -188,6 +201,7 @@ impl Runtime {
             .with_context(|| format!("listen on {}", config.addr))?;
         Ok(Self {
             addr: listener.local_addr()?,
+            express: config.express,
             connectors,
             restored_agents,
             restored_sessions,

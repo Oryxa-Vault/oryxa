@@ -470,3 +470,75 @@ async fn stopping_an_agent_that_is_not_here_says_so() {
     let history = wait_history(&manager, &summary.id, 1).await;
     assert_eq!(history[0].state, TurnState::Done);
 }
+
+/// Express answers the request the agent actually asked, and records it.
+///
+/// The point of the recording is that this mode is reviewable afterwards. A
+/// grant that leaves no trace is indistinguishable from an agent that never
+/// asked, which is the property that would make it unusable on anything that
+/// matters.
+#[tokio::test]
+async fn express_grants_permission_and_writes_it_down() {
+    let registry = Registry::new();
+    registry.put(permission_spec("guarded")).unwrap();
+    let events = Arc::new(MemoryStore::new());
+    let manager = Manager::configured(registry, Executor::new(), events.clone(), "", true);
+    let (summary, _) = manager.create(&["guarded".into()]).await.unwrap();
+    manager
+        .submit(
+            &summary.id,
+            Author::claimed("alice"),
+            "do the thing",
+            &["guarded".into()],
+        )
+        .await
+        .unwrap();
+
+    // Nobody resolves anything: the turn has to finish on its own.
+    let history = wait_history(&manager, &summary.id, 1).await;
+    assert_eq!(history[0].state, TurnState::Done, "{history:?}");
+    assert!(
+        manager
+            .pending_interactions(&summary.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let recorded = events.since(&summary.id, 0).await.unwrap();
+    let resolved = recorded
+        .iter()
+        .find(|event| event.kind == "interaction.resolved")
+        .expect("an express decision is still a recorded decision");
+    assert_eq!(resolved.actor, "express", "{resolved:?}");
+    let data = resolved.data.clone().unwrap_or_default();
+    // The agent's own allow-once, not a licence invented for it.
+    assert_eq!(data["option_id"], "allow-once", "{data}");
+    assert!(
+        recorded
+            .iter()
+            .any(|event| event.kind == "interaction.requested"),
+        "the request itself must still be in the log"
+    );
+}
+
+/// Without it, the same room waits for a person — the default has to stay the
+/// safe one.
+#[tokio::test]
+async fn without_express_the_request_still_waits() {
+    let registry = Registry::new();
+    registry.put(permission_spec("guarded")).unwrap();
+    let manager = Manager::new(registry, Executor::new(), Arc::new(MemoryStore::new()));
+    let (summary, _) = manager.create(&["guarded".into()]).await.unwrap();
+    manager
+        .submit(
+            &summary.id,
+            Author::claimed("alice"),
+            "do the thing",
+            &["guarded".into()],
+        )
+        .await
+        .unwrap();
+    let pending = wait_interaction(&manager, &summary.id).await;
+    assert_eq!(pending.agent, "guarded");
+}
