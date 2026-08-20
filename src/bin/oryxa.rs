@@ -363,7 +363,7 @@ async fn serve(options: Serve) -> Result<()> {
     if options.reset {
         eprintln!("oryxa: reset erased {} stream(s)", started.reset_streams);
     }
-    println!("\n  oryxa {}", env!("CARGO_PKG_VERSION"));
+    println!("\n  oryxa {} · pilot", env!("CARGO_PKG_VERSION"));
     println!("  ├─ viewer      http://localhost:{}", started.addr.port());
     println!(
         "  ├─ auth        {}",

@@ -58,6 +58,33 @@ pub fn draw(frame: &mut Frame, area: Rect) {
         Style::new().fg(DIM),
     )));
     lines.push(Line::default());
+    lines.push(Line::from(vec![
+        Span::raw("   "),
+        Span::styled(
+            format!("v{}", env!("CARGO_PKG_VERSION")),
+            Style::new().add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            " pilot ",
+            Style::new()
+                .fg(Color::Black)
+                .bg(ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    // What pilot means in practice, rather than as a label. Someone deciding
+    // whether to build on this needs the second sentence, not the badge.
+    for line in [
+        "You are in the pilot phase of Oryxa's multiplayer framework. Rooms, lanes",
+        "and the log work; names, flags and connector shapes can still change.",
+    ] {
+        lines.push(Line::from(Span::styled(
+            format!("   {line}"),
+            Style::new().fg(DIM),
+        )));
+    }
+    lines.push(Line::default());
 
     section(&mut lines, "Getting started");
     for (key, what) in [
@@ -81,12 +108,10 @@ pub fn draw(frame: &mut Frame, area: Rect) {
     // one of these that cannot be undone.
     section(&mut lines, "What a room can do to this machine");
     for warning in [
-        "Coding agents run as local processes and can write inside the",
-        "workspace their connector names. Anyone who can reach the room can",
-        "cause that. Point them at a checkout you can throw away.",
-        "",
-        "Permission requests stop and ask you. --express answers them all with",
-        "the agent's own allow, and asks nobody.",
+        "Coding agents run as local processes and can write inside the workspace",
+        "their connector names — anyone who can reach the room can cause that.",
+        "Point them at a checkout you can throw away. --express answers every",
+        "permission request with the agent's own allow, and asks nobody.",
     ] {
         lines.push(Line::from(Span::styled(
             format!("     {warning}"),
