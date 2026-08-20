@@ -40,6 +40,15 @@ pub async fn attach_or_start(
     let named = !server.trim().is_empty() || std::env::var("ORYXA_URL").is_ok();
     let client = Client::new(server, token, secret.clone());
     if reachable(client.base()).await {
+        // Said out loud, because attaching silently is indistinguishable from
+        // starting one — and the server that answers is the one whose
+        // environment and connector files are in force, not yours. A stale
+        // runtime on the usual port is otherwise diagnosed as a broken
+        // connector.
+        eprintln!(
+            "oryxa: attached to the runtime already running at {}",
+            client.base()
+        );
         if express {
             eprintln!(
                 "oryxa: --express applies to a runtime this starts, and one is already running at {} — its own setting stands",

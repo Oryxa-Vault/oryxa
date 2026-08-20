@@ -57,18 +57,18 @@ ones an editor launches — pinned to the versions the ACP registry names, so a
 room and an editor are running identical agents:
 
 ```bash
-export ORYXA_NPX=$(command -v npx)            # any Node 20+ install
-export ORYXA_NODE_PATH=$(dirname "$ORYXA_NPX")
-export ORYXA_WORKSPACE=/a/checkout/you/can/throw/away
+export ORYXA_WORKSPACE=/a/checkout/you/can/throw/away   # they can write here
 
 oryxa check codex-local                       # a real turn, before a room
 oryxa serve &
 oryxa open claude-code-local codex-local
 ```
 
-`oryxa which <agent>` prints what those variables resolved to, because an unset
-one renders as nothing and fails at spawn time with an error about a program
-called `""`.
+The adapters run under `npx`, so any Node 20+ install will do; the connector
+names the PATH it searches rather than inheriting one, because a runtime
+launched by an editor gets whatever sparse PATH the desktop gave it.
+`oryxa which <agent>` prints what a connector resolved to, which is the fastest
+way to find out that it resolved to nothing.
 
 The shim remains the fallback for command-line agents that do not speak ACP:
 

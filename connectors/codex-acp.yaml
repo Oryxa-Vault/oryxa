@@ -11,18 +11,21 @@
 # The package and version are the ones the ACP registry pins, which is the same
 # adapter an editor would launch.
 #
-#   export ORYXA_NPX=/path/to/npx                 # any Node 20+ install
-#   export ORYXA_NODE_PATH=/path/to/node/bin      # the directory npx needs on PATH
-#   export ORYXA_WORKSPACE=/path/to/a/checkout    # it can write here
+# npx comes from any Node 20+ install. PATH is named here rather than inherited
+# because a runtime launched by an editor gets whatever sparse PATH the desktop
+# gave it, which is rarely the one your shell has. If your node lives somewhere
+# else, this is a file — say so here.
+#
+#   export ORYXA_WORKSPACE=/path/to/a/checkout    # the agent can write here
 name: codex-local
 
 acp:
-  command: "{{env.ORYXA_NPX}}"
+  command: npx
   args: [-y, "@agentclientprotocol/codex-acp@1.4.0"]
   # Named rather than taken from the room, because this agent can write here.
   cwd: "{{env.ORYXA_WORKSPACE}}"
   env:
-    PATH: "{{env.ORYXA_NODE_PATH}}:/usr/local/bin:/usr/bin:/bin"
+    PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
     INITIAL_AGENT_MODE: agent
     NO_BROWSER: "1"
 
