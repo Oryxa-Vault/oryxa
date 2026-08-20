@@ -5,6 +5,8 @@
 //! and scrolling by source line disagree the moment anything is longer than the
 //! pane, which reads as the view jumping while an agent is speaking.
 
+use std::{collections::BTreeMap, time::Duration};
+
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -18,6 +20,9 @@ use crate::tui::app::{App, Screen, Voice, context_lines};
 
 /// Restrained on purpose: green is the product's signal, and everything else
 /// is there to separate a person from an agent from a note.
+/// Braille frames, because they animate in place without changing width.
+const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 const ACCENT: Color = Color::Green;
 const DIM: Color = Color::DarkGray;
 const AGENT_COLORS: [Color; 6] = [
@@ -40,7 +45,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // Before anything else and instead of everything else: the risks are on it,
     // and a warning behind a room is a warning nobody read.
     if app.welcome {
-        crate::tui::welcome::draw(frame, area);
+        crate::tui::welcome::draw(frame, area, &app.workspace);
         return;
     }
     let [header, body, footer] = Layout::vertical([
@@ -73,12 +78,28 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
         Screen::NewRoom(_) => spans.push(Span::styled("new room", Style::new().bold())),
         Screen::Room(room) => {
             spans.push(Span::styled(room.id.clone(), Style::new().bold()));
-            spans.push(Span::styled(
-                format!("  {}", room.agents.join(", ")),
-                Style::new().fg(DIM),
-            ));
-            if room.busy() {
-                spans.push(Span::styled("  ● thinking", Style::new().fg(ACCENT)));
+            // The roster is the status display. An agent that is working turns
+            // bright, spins and counts — a coding agent can be quiet for
+            // minutes, and the only question anyone has while waiting is
+            // whether it is still alive.
+            let working: BTreeMap<&str, Duration> = room
+                .running
+                .values()
+                .map(|(agent, since)| (agent.as_str(), since.elapsed()))
+                .collect();
+            for agent in &room.agents {
+                spans.push(Span::raw("  "));
+                match working.get(agent.as_str()) {
+                    Some(elapsed) => spans.push(Span::styled(
+                        format!(
+                            "{} {agent} {}s",
+                            SPINNER[app.tick % SPINNER.len()],
+                            elapsed.as_secs()
+                        ),
+                        Style::new().fg(ACCENT).bold(),
+                    )),
+                    None => spans.push(Span::styled(agent.clone(), Style::new().fg(DIM))),
+                }
             }
             if !room.live {
                 spans.push(Span::styled(
@@ -194,6 +215,9 @@ fn draw_new_room(frame: &mut Frame, app: &mut App, area: Rect) {
         frame.render_widget(Paragraph::new(text).style(Style::new().fg(DIM)), area);
         return;
     }
+    // Named before the agents are chosen, not after they have written
+    // something. This is the only screen where the choice is still open.
+    let workspace = app.workspace.clone();
     let items = screen
         .connectors
         .iter()
@@ -210,9 +234,32 @@ fn draw_new_room(frame: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect::<Vec<_>>();
     let mut state = ListState::default().with_selected(Some(screen.selected));
+    if workspace.is_empty() {
+        frame.render_stateful_widget(
+            List::new(items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+            area,
+            &mut state,
+        );
+        return;
+    }
+    let [banner, list] = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::default(),
+            Line::from(vec![
+                Span::styled("  workspace  ", Style::new().fg(DIM)),
+                Span::styled(workspace, Style::new().fg(Color::Yellow).bold()),
+            ]),
+            Line::from(Span::styled(
+                "  the agents you choose can read and write here",
+                Style::new().fg(DIM),
+            )),
+        ]),
+        banner,
+    );
     frame.render_stateful_widget(
         List::new(items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
-        area,
+        list,
         &mut state,
     );
 }

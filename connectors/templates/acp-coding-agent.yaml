@@ -7,7 +7,14 @@ acp:
   # passed directly; Oryxa never invokes a shell.
   command: npx
   args: [-y, "@agentclientprotocol/codex-acp@latest"]
-  cwd: "{{env.ORYXA_WORKSPACE}}"
+  # The room's workspace, which is where the agent may write.
+  #
+  # Resolved by the runtime, not read from the environment here: a room is
+  # created with a directory, and everything in that room agrees on it. The
+  # room view uses the directory you ran it in, an editor uses the project it
+  # has open, `oryxa open --workspace` says so outright, and ORYXA_WORKSPACE is
+  # the fallback when nothing else did. It is canonicalised and must exist.
+  cwd: "{{workspace}}"
 
   # What the agent is sent each turn. Without it an ACP agent is in the room
   # without being able to see it, and answers as though it were a private chat.

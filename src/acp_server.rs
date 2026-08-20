@@ -119,11 +119,15 @@ pub async fn serve(config: Config) -> Result<()> {
                 // still while an HTTP call runs — and if the server it is
                 // talking to has gone away, that call runs until it times out
                 // and the editor closes the transport on a silent agent.
-                async move |_request: NewSessionRequest, responder, connection| {
+                async move |request: NewSessionRequest, responder, connection| {
                     let state = state.clone();
                     let opening = connection.clone();
+                    // The editor tells us which project it has open, and that
+                    // is the directory its user is looking at — so it is the
+                    // one the agents in this room should work in.
+                    let workspace = request.cwd.to_string_lossy().into_owned();
                     connection.spawn(async move {
-                        match open_room(&state.config).await {
+                        match open_room(&state.config, &workspace).await {
                             Ok(room) => {
                                 let follow = follow(state.clone(), room.clone(), opening);
                                 state.following.lock().await.insert(room.clone(), follow);
@@ -244,7 +248,7 @@ pub async fn serve(config: Config) -> Result<()> {
         .map_err(|error| anyhow::anyhow!("{error}"))
 }
 
-async fn open_room(config: &Config) -> Result<String> {
+async fn open_room(config: &Config, workspace: &str) -> Result<String> {
     if let Some(room) = &config.room {
         // Named on the command line, so it must exist rather than be created
         // silently under a name someone expected to be theirs.
@@ -253,7 +257,10 @@ async fn open_room(config: &Config) -> Result<String> {
     }
     let opened: serde_json::Value = config
         .client
-        .post("/v1/sessions", json!({"agents": config.agents}))
+        .post(
+            "/v1/sessions",
+            json!({"agents": config.agents, "workspace": workspace}),
+        )
         .await?;
     let id = opened["id"].as_str().unwrap_or_default().to_string();
     rooms::remember(&id, opened["secret"].as_str().unwrap_or_default());

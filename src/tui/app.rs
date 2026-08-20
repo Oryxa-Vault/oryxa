@@ -87,7 +87,9 @@ pub struct Room {
     /// Inputs already shown. One message fans out to a turn per agent, so the
     /// question would otherwise be printed once per agent.
     pub groups: BTreeSet<String>,
-    pub running: BTreeMap<String, String>,
+    /// Turn id to the agent running it and when it started, so the
+    /// interface can say who is working and for how long.
+    pub running: BTreeMap<String, (String, std::time::Instant)>,
     pub pending: Vec<PendingInteraction>,
     /// Which option the approval prompt has selected, and whether it is open.
     pub approval: Option<usize>,
@@ -203,8 +205,14 @@ pub struct App {
     /// a mode this consequential must never be something you have to remember
     /// you turned on.
     pub express: bool,
+    /// The directory rooms opened here will work in, when this view is the one
+    /// deciding. Empty when attached to somebody else's server, where the
+    /// directory is theirs and a local path would mean nothing.
+    pub workspace: String,
     pub error: Option<String>,
     pub note: Option<String>,
+    /// Advances while anything is running, so the spinner turns.
+    pub tick: usize,
     pub help: bool,
     /// The first screen, up until any key is pressed.
     pub welcome: bool,
@@ -229,8 +237,10 @@ impl App {
             server,
             local_connectors,
             express: false,
+            workspace: String::new(),
             error: None,
             note: None,
+            tick: 0,
             help: false,
             welcome: false,
             quit: false,
@@ -286,9 +296,13 @@ impl App {
 
     pub fn open(&self, agents: Vec<String>) {
         let (client, tx) = (self.client.clone(), self.tx.clone());
+        let workspace = self.workspace.clone();
         tokio::spawn(async move {
             match client
-                .post::<Value>("/v1/sessions", json!({"agents": agents}))
+                .post::<Value>(
+                    "/v1/sessions",
+                    json!({"agents": agents, "workspace": workspace}),
+                )
                 .await
             {
                 Ok(opened) => {
@@ -457,18 +471,19 @@ impl App {
 
         match event.kind.as_str() {
             "output.part" if data["kind"] == "text" => {
-                // Deltas belong to the block the same agent is already speaking
-                // in. Starting a new one per delta would print the agent's name
-                // in front of every few characters.
-                match room.said.last_mut() {
-                    Some(last)
-                        if last.voice == Voice::Agent
-                            && last.who == event.actor
-                            && last.turn == event.turn =>
-                    {
-                        last.text.push_str(&text);
-                    }
-                    _ => room.said.push(Said {
+                // A delta joins the block this agent is already speaking in,
+                // wherever that block is — not only when it is the last one.
+                //
+                // Checking just the last block is correct for one agent and
+                // wrong for a room. Two agents streaming at once interleave
+                // their deltas, so every switch started a new block and one
+                // answer arrived as a dozen fragments, each labelled with the
+                // agent's name and each beginning mid-word.
+                match room.said.iter_mut().rev().find(|said| {
+                    said.voice == Voice::Agent && said.who == event.actor && said.turn == event.turn
+                }) {
+                    Some(block) => block.text.push_str(&text),
+                    None => room.said.push(Said {
                         who: event.actor.clone(),
                         voice: Voice::Agent,
                         text,
@@ -493,7 +508,13 @@ impl App {
                 });
             }
             "turn.started" => {
-                room.running.insert(event.turn.clone(), event.actor.clone());
+                // The agent is in the data, not the actor. A turn is started by
+                // whoever spoke, so `actor` here is the person — recording that
+                // as the working agent means the roster never matches and
+                // nobody ever appears to be working.
+                let agent = data["agent"].as_str().unwrap_or(&event.actor).to_string();
+                room.running
+                    .insert(event.turn.clone(), (agent, std::time::Instant::now()));
             }
             "turn.finished" => {
                 room.running.remove(&event.turn);
@@ -847,6 +868,42 @@ mod tests {
         assert!(room.said.iter().all(|said| said.voice == Voice::Agent));
     }
 
+    /// Two agents streaming at once must still read as two answers.
+    ///
+    /// Their deltas interleave, and a transcript that only ever appended to the
+    /// last block started a new one on every switch — so one answer arrived as
+    /// a dozen fragments, each labelled with the agent's name and each
+    /// beginning mid-word.
+    #[tokio::test]
+    async fn two_agents_streaming_at_once_stay_two_answers() {
+        let (mut app, _rx) = app();
+        app.enter_room("s_1".into(), vec!["codex".into(), "claude-code".into()]);
+        for (agent, turn, text) in [
+            ("codex", "t1", "event "),
+            ("claude-code", "t2", "an append-only "),
+            ("codex", "t1", "sourcing "),
+            ("claude-code", "t2", "log "),
+            ("codex", "t1", "is fine"),
+            ("claude-code", "t2", "is the point"),
+        ] {
+            app.on_message(Message::Event(Box::new(event(
+                "output.part",
+                agent,
+                turn,
+                json!({"kind": "text", "text": text}),
+            ))));
+        }
+
+        let Screen::Room(room) = &app.screen else {
+            panic!("not in a room")
+        };
+        assert_eq!(room.said.len(), 2, "{:?}", room.said.len());
+        assert_eq!(room.said[0].who, "codex");
+        assert_eq!(room.said[0].text, "event sourcing is fine");
+        assert_eq!(room.said[1].who, "claude-code");
+        assert_eq!(room.said[1].text, "an append-only log is the point");
+    }
+
     #[tokio::test]
     async fn one_input_is_shown_once_however_many_agents_it_woke() {
         let (mut app, _rx) = app();
@@ -863,6 +920,33 @@ mod tests {
             panic!("not in a room")
         };
         assert_eq!(room.said.len(), 1);
+    }
+
+    /// Who is working comes from the event's data, not its actor.
+    ///
+    /// A turn is started by whoever spoke, so the actor is the person. Reading
+    /// it as the agent means the roster never matches and nobody ever appears
+    /// to be working, however long they take.
+    #[tokio::test]
+    async fn the_agent_working_is_the_one_named_in_the_turn() {
+        let (mut app, _rx) = app();
+        app.enter_room("s_1".into(), vec!["codex".into()]);
+        app.on_message(Message::Event(Box::new(event(
+            "turn.started",
+            "shubham",
+            "t1",
+            json!({"agent": "codex", "text": "go"}),
+        ))));
+
+        let Screen::Room(room) = &app.screen else {
+            panic!("not in a room")
+        };
+        let working: Vec<&str> = room
+            .running
+            .values()
+            .map(|(agent, _)| agent.as_str())
+            .collect();
+        assert_eq!(working, vec!["codex"], "the person is not the one working");
     }
 
     #[tokio::test]

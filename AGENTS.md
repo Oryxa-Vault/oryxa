@@ -270,10 +270,12 @@ Claude Code finds its credentials by `$USER`, so a runtime launched with a
 stripped environment fails every turn in about a second with `ACP prompt` and
 nothing else.
 
-**Step 2.** Name the workspace, then start the server in the same shell.
+**Step 2.** Start the server from the directory the agents should work in. That
+directory is the room's workspace and it is where they write; `--workspace` on
+`oryxa open` names a different one per room.
 
 ```bash
-export ORYXA_WORKSPACE=/a/checkout/you/can/throw/away
+cd /a/checkout/you/can/throw/away
 oryxa serve &
 ```
 
