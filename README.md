@@ -185,14 +185,21 @@ to its release cycle.
 
 ## Status
 
-**v0.5.** Connectors, rooms, shared context, an event log everything is a fold
-over, live stream, viewer, coding agents through ACP or the retained shim, scoped rooms,
-turn budgets, and room keys so a name can be proved rather than claimed.
+**v0.6, and a pilot.** Rooms, lanes and the log work. What things are called,
+which flags exist and the shape of a connector can still change between
+versions, so pin one if you build on it.
 
-One Rust binary is the server, the room view and the scripting surface, and it
-installs from a URL. The browser viewer remains embedded in it. `oryxa-shim`
-intentionally remains in Go, because it exists to start processes on the host;
-see [`RUST_REWRITE.md`](RUST_REWRITE.md) for the exact boundary.
+Connectors, rooms, shared context, an event log everything is a fold over, live
+stream, viewer, coding agents through ACP or the retained shim, scoped rooms,
+turn budgets, and room keys so a name can be proved rather than claimed. New in
+this one: the room view, an editor seat over ACP, agents that can read the room
+they are in and each other's conclusions, stopping one agent without stopping
+the room, and `--express` for a room that grants what its agents ask.
+
+One Rust binary is the server, the room view, the editor seat and the scripting
+surface, and it installs from a URL. The browser viewer remains embedded in it.
+`oryxa-shim` intentionally remains in Go, because it exists to start processes
+on the host; see [`RUST_REWRITE.md`](RUST_REWRITE.md) for the exact boundary.
 
 Not built yet: agents have no owners, so the room's idea of who is in it is
 "everyone who has spoken"; no presence; turns are bounded per minute but not in
