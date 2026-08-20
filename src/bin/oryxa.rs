@@ -253,7 +253,11 @@ struct Approve {
 #[derive(Args)]
 struct Acp {
     /// The agents a new room is opened with.
-    #[arg(long, value_delimiter = ',', default_value = "claude-code,codex")]
+    ///
+    /// No default on purpose: naming agents here would put two framework names
+    /// in the core, and the core does not know what a Codex is. The editor's
+    /// own configuration says which agents its rooms contain.
+    #[arg(long, value_delimiter = ',')]
     agents: Vec<String>,
     /// Join this room instead of opening one.
     #[arg(long)]
@@ -402,6 +406,39 @@ async fn acp(args: Acp) -> Result<()> {
         eprintln!(
             "oryxa: no server was running, so this agent started one at {}",
             client.base()
+        );
+    }
+    if args.agents.is_empty() {
+        // Named rather than guessed. An editor launching this has a
+        // configuration file, and which agents belong in its rooms is the one
+        // thing only it knows.
+        #[derive(serde::Deserialize)]
+        struct Agent {
+            name: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct Listed {
+            #[serde(default)]
+            agents: Vec<Agent>,
+        }
+        let available = client
+            .get::<Listed>("/v1/agents")
+            .await
+            .map(|listed| {
+                listed
+                    .agents
+                    .into_iter()
+                    .map(|agent| agent.name)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        bail!(
+            "--agents says who is in the room, and it was not given\n  this runtime can reach: {}",
+            if available.is_empty() {
+                "nothing — point it at a connector directory".to_string()
+            } else {
+                available.join(", ")
+            }
         );
     }
     acp_server::serve(acp_server::Config {

@@ -109,7 +109,7 @@ in the room view or with `oryxa approve`.
 
 | | |
 |---|---|
-| `--agents a,b` | the agents a new room is opened with |
+| `--agents a,b` | the agents a new room is opened with — required, since only the editor's configuration knows which |
 | `--room ID` | join this room instead of opening one |
 | `--as NAME` | who the person in the editor speaks as |
 
