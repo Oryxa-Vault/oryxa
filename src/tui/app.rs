@@ -705,19 +705,25 @@ impl App {
 /// Splits a leading `@agent` off a message.
 ///
 /// Only names that are actually in the room count, so an email address or a
-/// `@here` aimed at people is left in the text where it was written.
+/// `@here` aimed at people is left in the text where it was written. Short
+/// names work here for the same reason they work on the server: people write
+/// `@codex`, not `@codex-local`.
 fn directed(text: &str, agents: &[String]) -> (Vec<String>, String) {
     let mut to = Vec::new();
     let mut rest = text;
     while let Some(after) = rest.strip_prefix('@') {
-        let (name, tail) = match after.find(char::is_whitespace) {
+        let (written, tail) = match after.find(char::is_whitespace) {
             Some(index) => after.split_at(index),
             None => (after, ""),
         };
-        if !agents.iter().any(|agent| agent == name) {
+        let written = written.to_ascii_lowercase();
+        let Some(agent) = agents
+            .iter()
+            .find(|agent| crate::session::names_for(agent).contains(&written))
+        else {
             break;
-        }
-        to.push(name.to_string());
+        };
+        to.push(agent.clone());
         rest = tail.trim_start();
     }
     (to, rest.to_string())
@@ -874,6 +880,12 @@ mod tests {
         assert_eq!(
             directed("@codex look at this", &agents),
             (vec!["codex".to_string()], "look at this".to_string())
+        );
+        // Written short, sent to the agent's real name.
+        let long = vec!["codex-local".to_string()];
+        assert_eq!(
+            directed("@codex look at this", &long),
+            (vec!["codex-local".to_string()], "look at this".to_string())
         );
         assert_eq!(
             directed("@codex @claude-code both of you", &agents),

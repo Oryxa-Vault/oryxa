@@ -36,10 +36,10 @@ pub fn who_wakes(
     let mut by_interest = Vec::new();
     let mut interest = String::new();
     for agent in agents {
-        let lower = agent.to_ascii_lowercase();
-        if mentioned.contains(&lower) {
+        let called = names_for(agent);
+        if called.iter().any(|name| mentioned.contains(name)) {
             by_mention.push(agent.clone());
-        } else if words.contains(&lower) {
+        } else if called.iter().any(|name| words.contains(name)) {
             by_name.push(agent.clone());
         } else if let Some(spec) = registry.get(agent) {
             for wanted in &spec.interests {
@@ -91,6 +91,34 @@ pub fn who_wakes(
     }
 }
 
+/// What an agent answers to.
+///
+/// People say "codex", not "codex-local". Matching the configured name exactly
+/// meant a message that plainly addressed one agent woke every agent in the
+/// room, because naming failed and the ladder fell through to "open to the
+/// room" — the opposite of what was asked for, and the expensive direction to
+/// be wrong in.
+///
+/// Prefixes at a separator only, never arbitrary parts: `claude-code-local`
+/// answers to `claude` and `claude-code`, and not to `code` or `local`, which
+/// are ordinary words that would wake it constantly.
+pub fn names_for(agent: &str) -> Vec<String> {
+    let lower = agent.to_ascii_lowercase();
+    let mut names = vec![lower.clone()];
+    let mut end = 0;
+    for (index, character) in lower.char_indices() {
+        if character == '-' || character == '_' || character == '.' {
+            if index > end {
+                names.push(lower[..index].to_string());
+            }
+            end = index;
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
 fn tokens(text: &str) -> BTreeSet<String> {
     let address =
         Regex::new(r"(?i)\b\S+@\S+\.\S+|https?://\S+|\b\S+\.(com|io|net|org|co|dev|ai)\b\S*")
@@ -112,6 +140,29 @@ fn mentions(text: &str) -> BTreeSet<String> {
         .filter_map(|capture| capture.get(1))
         .map(|value| value.as_str().to_ascii_lowercase())
         .collect()
+}
+
+#[cfg(test)]
+mod naming {
+    use super::names_for;
+
+    #[test]
+    fn an_agent_answers_to_its_short_name_but_not_to_ordinary_words() {
+        assert_eq!(names_for("codex-local"), vec!["codex", "codex-local"]);
+        assert_eq!(
+            names_for("claude-code-local"),
+            vec!["claude", "claude-code", "claude-code-local"]
+        );
+        // The parts that are not prefixes are ordinary English and would wake
+        // the agent on any message that happened to use them.
+        for word in ["code", "local"] {
+            assert!(
+                !names_for("claude-code-local").contains(&word.to_string()),
+                "{word} should not address an agent"
+            );
+        }
+        assert_eq!(names_for("langgraph"), vec!["langgraph"]);
+    }
 }
 
 fn chatter(text: &str) -> bool {
