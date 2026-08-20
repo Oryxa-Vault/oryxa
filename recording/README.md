@@ -15,18 +15,17 @@ node demo.mjs        # drives two browsers, writes ./out and ./final/marks.json
 node ramp.mjs        # writes ./final/oryxa-multiplayer-cut.mp4
 ```
 
-Needs a server and a shim already running, with both agents signed in:
+Needs a server already running, with both agents signed in:
 
 ```bash
-oryxa-shim -agents shim.yaml &
-oryxa serve -addr :8099 &
+oryxa serve --addr :8099 &
 ```
 
 | variable | |
 |---|---|
 | `ORYXA_URL` | default `http://localhost:8099` |
 | `ORYXA_TOKEN` | if the server was started with `-token` |
-| `ORYXA_AGENTS` | default `claude-code,codex` |
+| `ORYXA_AGENTS` | default `claude-code-local,codex-local` |
 
 ## Why two browsers
 

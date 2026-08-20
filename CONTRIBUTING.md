@@ -10,7 +10,7 @@ this and got lost here" is genuinely useful — it tells us where the docs lie.
 
 ## The most useful thing you can do
 
-**Write a connector for a framework we haven't tested.** It's a YAML file — no Go
+**Write a connector for a framework we haven't tested.** It's a YAML file — no code
 required — and it makes Oryxa work for everyone using that framework.
 
 1. Copy the closest file in [`connectors/templates/`](connectors/templates).
@@ -34,13 +34,6 @@ marked unverified. That's still worth having.
 cargo test --all-targets                        # unit + end-to-end
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-```
-
-`oryxa-shim` and the Go client package are still Go, and have their own:
-
-```bash
-go test -race ./...     # required; the session loop is concurrent
-go vet ./... && gofmt -l .
 ```
 
 Two rules the codebase enforces on itself:
@@ -81,7 +74,7 @@ separates a connector problem from an agent problem in seconds.
 ## Pull requests
 
 - Branch from `main`, keep the PR focused on one thing.
-- `cargo test --all-targets` and `go test -race ./...` green before you open it.
+- `cargo test --all-targets` green before you open it.
 - Explain **why** in the description. The what is in the diff.
 - Draft PRs are welcome — open one early if you want a second opinion on an
   approach before you finish it.

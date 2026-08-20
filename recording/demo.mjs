@@ -7,7 +7,7 @@
 //
 //   node demo.mjs && node ramp.mjs
 //
-// Needs a running server and shim, and both agents signed in. See README.md.
+// Needs a running server, and both agents signed in. See README.md.
 //
 // The timing marks matter as much as the footage. Real agent turns are most of
 // the running time and almost none of the interest, and where each one starts
@@ -19,7 +19,7 @@ import { writeFileSync, mkdirSync } from 'fs';
 
 const BASE = process.env.ORYXA_URL || 'http://localhost:8099';
 const TOKEN = process.env.ORYXA_TOKEN || '';
-const AGENTS = (process.env.ORYXA_AGENTS || 'claude-code,codex').split(',');
+const AGENTS = (process.env.ORYXA_AGENTS || 'claude-code-local,codex-local').split(',');
 const SIZE = { width: 1280, height: 900 };
 
 const BEAT = 1400;

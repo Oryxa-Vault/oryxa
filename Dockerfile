@@ -4,7 +4,7 @@ FROM rust:1.90-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY internal/web/assets ./internal/web/assets
+COPY web ./web
 COPY connectors ./connectors
 RUN cargo build --locked --release --bin oryxa
 

@@ -241,9 +241,10 @@ context:                                  # writing
 
 ## Task C: Connect a coding agent
 
-ACP-compatible coding agents use the first-class local ACP transport: one
-long-lived subprocess and ACP session per room-agent lane. The retained
-`oryxa-shim` puts an HTTP server in front of agents that do not expose ACP.
+A coding agent joins over ACP: one long-lived subprocess and one ACP session per
+room-agent lane, so turns stay ordered inside an agent while agents run in
+parallel. The adapters are npm packages the ACP registry names, which are the
+same ones an editor would launch.
 
 Whoever is in the room brokers permission for ACP lanes. Permission requests
 become durable room interactions and remain paused until someone selects one of
@@ -258,43 +259,45 @@ its unresolved request; nothing is silently approved.
 > throw away. Do not point it at the repository they are currently working in
 > unless they say to.
 
-**Step 1.** Confirm the CLI is installed and signed in — the shim only starts
-processes, it cannot authenticate for them.
+**Step 1.** Confirm the agent is signed in. Oryxa starts processes; it cannot
+authenticate for them.
 
 ```bash
-claude --version     # or: codex --version
+claude auth status       # or: codex login status
 ```
 
-**Step 2.** Start both processes **in the same shell**, so both see the token.
+Claude Code finds its credentials by `$USER`, so a runtime launched with a
+stripped environment fails every turn in about a second with `ACP prompt` and
+nothing else.
+
+**Step 2.** Name the workspace, then start the server in the same shell.
 
 ```bash
-export ORYXA_SHIM_TOKEN=$(openssl rand -hex 32)
-oryxa-shim -agents shim.yaml &     # 127.0.0.1:8090
+export ORYXA_WORKSPACE=/a/checkout/you/can/throw/away
 oryxa serve &
 ```
 
-Set on only one side, the server starts, every agent looks healthy, and every
-turn fails with a 401 that names neither end. If you see 401s, check this first.
-
-**Step 3.** Probe, then open.
+**Step 3.** Probe, then open. `oryxa which <agent>` prints what the connector
+resolved to, which is the fastest way to find out that it resolved to nothing.
 
 ```bash
-oryxa check claude-code
-oryxa open claude-code codex
+oryxa check codex-local
+oryxa open claude-code-local codex-local
 ```
 
-**Check.** A coding-agent turn is a whole agentic loop, so it is slow — 15m
-timeout in `shim.yaml`. Do not conclude it is broken because it has not answered
-in ten seconds; `oryxa tail <session>` shows it working.
+**Check.** A coding-agent turn is a whole agentic loop, so it is slow — the
+connectors allow 30m. Do not conclude it is broken because it has not answered
+in ten seconds; `oryxa tail <session>` shows it working, and the first turn in a
+room also pays for the agent's own session setup.
 
 ### What confines them, and what does not
 
 | | Claude Code | Codex |
 |---|---|---|
-| confinement | path patterns only — `Edit(./**)`, `Write(./**)` | OS sandbox — `-s workspace-write` |
+| confinement | path patterns only — `Edit(./**)`, `Write(./**)` | OS sandbox — workspace-write |
 | remove that and | it writes anywhere (verified: it wrote to `/tmp`) | the sandbox still holds |
-| session id | you name it (`session: generate`) | it mints one (`session: capture`) |
-| resume | a flag | a subcommand, and it rejects `-s` |
+| permission | asks the room, and waits | asks the room, and waits |
+| session | resumed after a restart, both advertise `loadSession` |
 
 `--tools` makes a tool exist; `--allowedTools` is what stops it asking. A tool
 that exists and is not allowed is **denied outright** in headless, which reads
@@ -304,16 +307,14 @@ as an agent that will not try rather than one that cannot.
 user's behalf. That removes the only boundary Claude Code has. If they ask for
 it, tell them what it costs first.
 
-What may run lives in [`shim.yaml`](shim.yaml) or an operator-controlled ACP
-connector file and can never be set over HTTP. `POST /v1/agents` accepts HTTP
-connectors at runtime; allowing that endpoint to name a command would be remote
-code execution behind one shared token.
+What may run lives in an operator-controlled ACP connector file and can never be
+set over HTTP. `POST /v1/agents` accepts HTTP connectors at runtime; allowing
+that endpoint to name a command would be remote code execution behind one shared
+token.
 
 ---
 
 ## Task D: Work on the core
-
-The core is Rust:
 
 ```bash
 cargo test --all-targets
@@ -321,19 +322,9 @@ cargo fmt --all --check    # must print nothing
 cargo clippy --all-targets -- -D warnings
 ```
 
-`oryxa-shim` is still Go, and so is the client package and the server its tests
-run against:
-
-```bash
-go build ./...
-go test -race ./...        # the session loop is concurrent — this is the one that matters
-go vet ./...
-gofmt -l .                 # must print nothing
-```
-
-CI runs both, plus `staticcheck`, a test that fails if `openapi.yaml` and the
-registered Rust routes disagree in either direction, and a check that no
-framework name appears in core code.
+CI runs those, plus a test that fails if `openapi.yaml` and the registered
+routes disagree in either direction, and a check that no framework name appears
+in core code.
 
 ### Layout
 
@@ -348,13 +339,11 @@ src/session/        the room: membership, lanes, turn loop
 src/events/         append-only log
 src/api/            HTTP surface
 src/sharedctx/      shared context
+src/acp_server.rs   Oryxa as an ACP agent, so an editor is a seat in the room
 install.sh          the one-URL installer, published to oryxa.in
-cmd/oryxa-shim/     HTTP in front of agents that only speak stdin/stdout (Go)
-internal/           the Go server, kept for the client package's tests
-client/             the one exported Go package, a thin wrapper over /v1
+web/index.html      the browser viewer, embedded into the binary
 connectors/         connector files, loaded at startup
-shim.yaml           what the shim may run — never settable over HTTP
-openapi.yaml        the HTTP contract, tested against the handlers
+openapi.yaml        the HTTP contract, tested against the router
 ```
 
 ### Invariants — do not break these
@@ -396,12 +385,12 @@ Check it before implementing something that may already be deliberately absent.
 
 | | |
 |---|---|
-| Go | 1.25+ |
+| Rust | stable |
+| Node | 20+, for the ACP adapters `npx` runs |
 | server | `:8080` — API and viewer |
-| shim | `127.0.0.1:8090` |
 | mockagent | `:9000` |
-| verified against | Claude Code 2.1.208, codex-cli 0.147.0 |
-| coding-agent timeout | 15m |
+| verified against | claude-agent-acp 0.69.0, codex-acp 1.4.0 |
+| coding-agent timeout | 30m |
 | turn budgets | 30/min per room, 120/min per server, `0` disables |
 | store | in-memory unless `--db` names a postgres DSN |
 | auth | off unless `--token` is set; the startup banner says which |

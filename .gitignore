@@ -25,10 +25,9 @@
 !/connectors/adk.yaml
 !/connectors/pydanticai.yaml
 !/connectors/crewai.yaml
-# Both reach a shim on localhost and carry no credentials — what may actually
-# run lives in shim.yaml, which is the file to think about before sharing.
-!/connectors/claude-code.yaml
-!/connectors/codex.yaml
+# The coding agents are ACP: they name a local command, so what may actually run
+# lives in the connector file itself. That is the file to think about before
+# sharing one.
 !/connectors/claude-code-acp.yaml
 !/connectors/codex-acp.yaml
 # bee-agui.yaml stays local: it names a private internal service. The generic
