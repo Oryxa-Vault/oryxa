@@ -768,6 +768,34 @@ mod tests {
         }
     }
 
+    /// A stream of whole messages needs a separator; a stream of deltas must
+    /// not have one.
+    ///
+    /// Without `join`, two complete sentences arrive concatenated mid-word —
+    /// which is what an agent that sends messages rather than tokens produces.
+    /// With it applied to a delta stream, every few characters would be pushed
+    /// apart instead. The rule is only ever between parts, never before the
+    /// first, so a reply does not open with a blank line.
+    #[tokio::test]
+    async fn join_separates_whole_messages_and_never_leads() {
+        let base = test_server().await;
+        let executor = Executor::new();
+        let mut joined = spec(base.clone(), "/ndjson", "ndjson", "$.message");
+        joined.turn.response.as_mut().unwrap().join = "\n\n".into();
+
+        let mut output = String::new();
+        executor
+            .turn(&joined, &RenderContext::default(), |part| {
+                if part.kind == "text" {
+                    output.push_str(&part.text);
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(output, "one\n\ntwo");
+        assert!(!output.starts_with('\n'), "the first part is not preceded");
+    }
+
     #[tokio::test]
     async fn open_captures_a_handle() {
         let base = test_server().await;

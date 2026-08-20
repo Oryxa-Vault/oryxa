@@ -8,10 +8,6 @@ One binary, for the room view and for scripts. It goes in `~/.local/bin`, is
 checked against the published checksums before it is installed, and asks for no
 privileges. From a clone: `cargo install --path . --bin oryxa`.
 
-`oryxa-shim` is a second binary and is still Go — `go install ./cmd/oryxa-shim`.
-It is deliberately not in the Docker image, because it exists to start processes
-on the host.
-
 > Connectors are files. Every command reads `./connectors` unless you say
 > otherwise, so an installed binary run somewhere else reports no agents — point
 > `--connectors` at your directory, or keep them in `~/.config/oryxa/connectors`,
@@ -117,7 +113,6 @@ in the room view or with `oryxa approve`.
 
 ```
 oryxa serve                 run the API and viewer
-oryxa-shim -agents FILE     serve command-line agents over HTTP
 ```
 
 The viewer is embedded in the binary and served at the same address, for the
@@ -251,17 +246,6 @@ mode 0600, so `--secret` is for joining someone else's.
 | `-e, --express` | grant every permission without asking (`ORYXA_EXPRESS`) |
 
 What each of these is for: [running.md](running.md).
-
-### `oryxa-shim`
-
-| | |
-|---|---|
-| `-addr 127.0.0.1:8090` | listen address |
-| `-agents shim.yaml` | agent definitions (`ORYXA_SHIM_AGENTS`) |
-| `-token TOKEN` | require this bearer token (`ORYXA_SHIM_TOKEN`) |
-
-Open to anyone who can reach the port if `--token` is empty, and reaching that
-port is enough to run what is in the config file.
 
 ## Express
 

@@ -38,11 +38,10 @@ services:
       # Connectors use {{env.ORYXA_AGENT_HOST}}, so the same files work here and
       # on a host. Agents on the host machine are reachable at this name.
       ORYXA_AGENT_HOST: ${ORYXA_AGENT_HOST:-host.docker.internal}
-      # oryxa-shim gets its own name because the two part company as soon as
-      # anything is containerised: the shim starts processes, so it stays on the
-      # host with the CLI and its credentials rather than moving in here.
-      ORYXA_SHIM_HOST: ${ORYXA_SHIM_HOST:-host.docker.internal}
-      ORYXA_SHIM_TOKEN: ${ORYXA_SHIM_TOKEN:-}
+      # Coding agents are not reachable from in here at all. They are local
+      # subprocesses this server starts, holding the credentials and the
+      # checkout of whoever is signed in — none of which a container has. Run
+      # the server on the host when you want them in a room.
       # Development: erase every session on start, so a restart gives you an
       # empty board instead of every room you were already finished with. It
       # deletes the durable log — leave it unset anywhere the history matters.

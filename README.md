@@ -70,15 +70,6 @@ launched by an editor gets whatever sparse PATH the desktop gave it.
 `oryxa which <agent>` prints what a connector resolved to, which is the fastest
 way to find out that it resolved to nothing.
 
-The shim remains the fallback for command-line agents that do not speak ACP:
-
-```bash
-export ORYXA_SHIM_TOKEN=$(openssl rand -hex 32)
-oryxa-shim -agents shim.yaml &     # same shell — both processes need the token
-oryxa serve &
-oryxa open claude-code codex
-```
-
 > **Both agents can write inside their working directory**, and they are
 > confined differently — Codex by the OS sandbox, Claude Code by path patterns
 > only. Anyone who can reach that room can cause writes to that directory. Point
@@ -196,10 +187,9 @@ this one: the room view, an editor seat over ACP, agents that can read the room
 they are in and each other's conclusions, stopping one agent without stopping
 the room, and `--express` for a room that grants what its agents ask.
 
-One Rust binary is the server, the room view, the editor seat and the scripting
-surface, and it installs from a URL. The browser viewer remains embedded in it.
-`oryxa-shim` intentionally remains in Go, because it exists to start processes
-on the host; see [`RUST_REWRITE.md`](RUST_REWRITE.md) for the exact boundary.
+One Rust binary is all of it: the server, the room view, the editor seat and the
+scripting surface, with the browser viewer embedded. Nothing else is required to
+run a room.
 
 Not built yet: agents have no owners, so the room's idea of who is in it is
 "everyone who has spoken"; no presence; turns are bounded per minute but not in

@@ -221,7 +221,7 @@ with no command at all. Graceful shutdown on SIGTERM, so a restart drains rather
 than manufacturing turns whose outcome is unknown.
 15MB scratch image.
 
-**Command-line agents.** `oryxa-shim` serves an agent that has no HTTP surface —
+**Command-line agents.** A coding agent with no HTTP surface —
 a coding agent reading stdin and writing JSON lines — so it reaches Oryxa as an
 ordinary connector. It needed no spec change, which is the same result AG-UI
 gave and a stronger one: this is not another protocol, it is not a server at all.
@@ -548,6 +548,19 @@ currently the right call — `events.Store` gained a method this week, which wou
 have been a breaking change to a published interface — but it should be a stated
 decision rather than something people discover. `events.Store` is the first
 thing worth exporting, when someone names a second implementation.
+
+### The rewrite is finished
+
+There is no Go left. The server, the room view, the editor seat, the scripting
+surface and the mock agent are one Rust binary, and `RUST_REWRITE.md` — which
+existed to say where the boundary ran — went with the boundary.
+
+What went with it was not only a language. `oryxa-shim` put an HTTP server in
+front of agents that speak stdin and stdout, and it is gone because ACP took the
+job: a coding agent is now a supervised subprocess on a pipe with permission
+requests the room answers, rather than a second service on a port with a shared
+token in front of it. The Go client package is gone too. `/v1` and
+`openapi.yaml` were always the contract, and now they are the only one.
 
 ### The terminal path
 

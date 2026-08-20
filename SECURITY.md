@@ -125,46 +125,45 @@ private network deliberately. The startup banner says so every time it is on.
 Run it on a laptop, behind a VPN, or behind an authenticating proxy you operate.
 Don't put it on the public internet yet.
 
-### If you run `oryxa-shim`
+### If you put a coding agent in a room
 
-The shim starts processes, which makes it the most sensitive thing in this
-repository. Three properties hold it together, and all three are deliberate:
+A coding agent is a local process this repository starts, which makes it the
+most sensitive thing here. Four properties hold it together, and all four are
+deliberate.
 
-- **What may run comes only from a local file.** Nothing in a request names a
-  command, and `GET /v1/agents` does not serve the command lines back. This is
-  why exec is not a connector field: connectors are registrable over HTTP at
-  `POST /v1/agents`, so a spec that could name a command would make that endpoint
-  remote code execution behind one shared token.
-- **It binds to loopback by default, and refuses to bind anywhere else without a
-  token.** Not a warning — reaching this port is enough to run what is in the
-  config file, and a line printed at startup is read once, by someone who has
-  already decided to run the command.
-- **Both shipped agents can write inside their working directory.** Read-only
-  made them worse colleagues than they needed to be: asked what was wrong with
-  this repo, Codex found a real crash in the event fan-out and could only report
-  it as a suspicion, because `go test` could not create its build directory.
+**What may run comes only from a local file.** An ACP connector names a command,
+and connectors are registrable over HTTP at `POST /v1/agents` — so a registered
+spec that could name a command would make that endpoint remote code execution
+behind one shared token. It cannot: `acp` is accepted only from files an
+operator loaded, and `--allow-private-agents` does not change it.
 
-  **They are confined by different mechanisms, and only one of them is a
-  sandbox.** Codex runs under `-s workspace-write`, enforced by the OS. Claude
-  Code has no sandbox — `dir:` sets the working directory and nothing stops an
-  absolute path leaving it, which was verified rather than assumed: with `Write`
-  merely allowed, it created a file in `/tmp` without objection. It is confined
-  instead by path-patterned permissions, `Edit(./**)` and `Write(./**)`, and by
-  a shell narrowed to the project's build and test commands. With those in place
-  the same request is refused, and it says so.
+**There is no port to reach.** The agent is a child process on a pipe, not a
+service, so nothing on the network can talk to it except through a room. The
+room is the only door, and its own authentication is what guards it.
 
-  Two consequences worth holding on to. A tool named in `--tools` but absent from
-  `--allowedTools` is *denied*, not prompted, in headless — so a missing pattern
-  looks like an agent that will not try rather than one that cannot. And the
-  patterns are the boundary: widening them to `Write(**)`, or adding a broad
-  `Bash(*)`, removes it entirely.
+**Every action the agent asks for is a request somebody answers.** Permission
+requests stop the lane and are recorded, with the agent's own options, and the
+decision is recorded too. `--express` answers them all with the agent's allow —
+that is a real grant, and the reason it prefers *allow once* to *always allow*
+is that always takes every action after it out of the log. Nothing is ever
+silently approved: cancel a turn and its unresolved request is cancelled with
+it.
 
-  What it costs either way: anyone who can reach one of these rooms can cause
-  writes to that directory. Point it at a checkout you can throw away, not the
-  one you are working in.
+**The workspace is a boundary the agent enforces, not one Oryxa does.** A
+connector names the working directory. What keeps an agent inside it is the
+agent: Codex runs under an OS sandbox, and Claude Code is confined by
+path-patterned permissions and a narrowed shell rather than by anything the
+kernel enforces. Two consequences worth holding on to. Widening those patterns —
+`Write(**)`, a broad `Bash(*)` — removes the boundary entirely. And a tool named
+but not allowed is *denied* rather than prompted, so a missing pattern looks
+like an agent that will not try rather than one that cannot.
 
-Treat the shim's host as the trust boundary: it has the credentials and the
-repository, and a room member's message is the input that drives it.
+What it costs either way: anyone who can reach one of these rooms can cause
+writes to that directory. Point it at a checkout you can throw away, not the one
+you are working in.
+
+Treat the host running the room as the trust boundary: it has the credentials
+and the repository, and a room member's message is the input that drives it.
 
 When read scoping lands, this section changes and the release notes will say so.
 

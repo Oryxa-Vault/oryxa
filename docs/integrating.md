@@ -167,89 +167,76 @@ response:
 ### 6. Your agent is a command, not a server
 
 Coding agents — Claude Code, Codex, and the rest — have no HTTP surface. They
-read stdin and write JSON lines to stdout. `oryxa-shim` puts a server in front
-of one, and then it is an ordinary connector reading an ordinary NDJSON stream.
-
-```bash
-oryxa-shim -agents shim.yaml     # runs on 127.0.0.1:8090
-oryxa check claude-code
-```
-
-The command line lives in `shim.yaml`, never in the connector:
+speak the Agent Client Protocol over stdio, so the connector names a command
+instead of a base URL:
 
 ```yaml
-# Trimmed to a read-only tool list to keep the shape readable. The shipped
-# shim.yaml grants Edit and Write as well — read the comments in it before
-# copying, and see the note below.
-agents:
-  - name: claude-code
-    dir: .
-    session: generate            # we name the id; `capture` reads it back instead
-    first:  [claude, -p, --output-format, stream-json, --verbose,
-             --tools, "Read,Grep,Glob", --session-id, "{{handle}}"]
-    resume: [claude, -p, --output-format, stream-json, --verbose,
-             --tools, "Read,Grep,Glob", --resume, "{{handle}}"]
+name: codex-local
+
+acp:
+  command: npx
+  args: [-y, "@agentclientprotocol/codex-acp@1.4.0"]
+  cwd: "{{env.ORYXA_WORKSPACE}}"
+  env:
+    PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+
+capabilities: [stream, multi_turn, cancel]
+timeout: 30m
 ```
 
-`first` and `resume` are complete command lines, not a base plus extras. That is
-the second agent's doing: Claude Code accepts a session id you name and resumes
-with a flag, while Codex mints its own id, resumes through a subcommand, and
-rejects on `resume` the sandbox flag its own `exec` requires. Anything clever
-enough to append flags to a shared base breaks there.
+The adapter versions are the ones the [ACP registry](https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json)
+pins, which are the same ones an editor launches — so a room and an editor run
+identical agents rather than two things with the same name. `PATH` is named
+rather than inherited because a runtime launched by an editor or a service
+manager gets whatever sparse environment the desktop handed it.
 
-A command with no `{{input}}` gets the prompt on stdin, which is where a long one
-belongs: argument lists have a length limit and a room's shared context can reach
-it.
+One long-lived subprocess and one ACP session belong to each room-agent lane, so
+turns stay ordered within an agent while separate agents run in parallel, and a
+room comes back after a restart rather than starting the conversation again.
 
-**Why this is a separate process, and not a field in the connector.** Oryxa
+**Why the command is in a file, and can never be in a registration.** Oryxa
 registers connectors over HTTP at `POST /v1/agents`, so a spec is something a
 caller supplies at runtime. A spec that could name a command to run would make
-that endpoint remote code execution behind one shared token. Keeping exec out
-here means the only thing deciding what may run is a file on the machine.
+that endpoint remote code execution behind one shared token. `acp` is therefore
+accepted only from files an operator loaded — `--allow-private-agents` does not
+change it.
 
-Everything the command writes to stdout arrives untouched when it is JSON, so
-the connector is written against the CLI's own events:
-
-```yaml
-turn:
-  method: POST
-  path: /v1/agents/claude-code/turn
-  body:
-    handle: "{{handle}}"
-    input: "{{context.pinned}}\n\n{{input}}"
-  response:
-    format: ndjson
-    error: $.error
-    when: $.type == assistant
-    text:
-      - $.message.content[*].text
-```
-
-Non-JSON output and everything on stderr is wrapped in an envelope
-(`{"type":"oryxa.shim","stream":"stderr","text":…}`) rather than passed through
-raw. Raw, it would reach the executor's "show the user something" fallback and a
-stray warning would arrive in the room as the agent's answer. Wrapped, it lands
-as opaque activity — which is what makes a failing turn readable instead of
-simply empty.
-
-For a CLI with no JSON mode at all, read the wrapper instead:
+**Say what the agent is sent.** An HTTP connector decides that in its request
+body; an ACP one has no body, so it says it in `acp.prompt`. Without it the
+agent is in the room unable to see it — its own history it keeps, but the other
+agents' answers are invisible:
 
 ```yaml
-response:
-  format: ndjson
-  when: $.stream == stdout
-  text:
-    - $.text
+acp:
+  prompt: |
+    This is a multiplayer room. The connected agents are {{agents}}, sharing one
+    session and one context. You are {{agent}}.
+
+    {{context}}
+
+    ---
+
+    {{input}}
+
+context:                    # the other half — reading is worth nothing
+  - key: findings           # if nobody writes
+    from: $text
+    last: true
 ```
 
-**Two things to decide before you copy `shim.yaml`.** Anyone who can reach the
-room can make this agent act, and both shipped agents can write inside their
-working directory — Codex held there by the OS sandbox, Claude Code by
-path-patterned permissions only. An allowlist is a stronger boundary than a
-permission mode because it cannot be prompted around, but it only binds what it
-names: widening `Edit(./**)` to `Edit(**)`, or adding a broad `Bash(*)`, removes
-the boundary entirely. Point it at a checkout you can throw away, and see
-[SECURITY.md](../SECURITY.md#if-you-run-oryxa-shim).
+**Permission is asked, not assumed.** An ACP agent that wants to write stops and
+asks, with its own options. The request becomes a durable room interaction that
+the room view prompts for and `oryxa approve` answers from a script; cancelling
+the turn cancels the request. `--express` answers them all with the agent's own
+allow, which is a real grant — see [SECURITY.md](../SECURITY.md#if-you-put-a-coding-agent-in-a-room).
+
+**Before you point one at a directory.** Anyone who can reach the room can make
+this agent act, and both shipped agents can write inside their working directory
+— Codex held there by the OS sandbox, Claude Code by path-patterned permissions
+only. An allowlist is a stronger boundary than a permission mode because it
+cannot be prompted around, but it only binds what it names: widening `Edit(./**)`
+to `Edit(**)`, or adding a broad `Bash(*)`, removes the boundary entirely. Point
+it at a checkout you can throw away.
 
 And a turn here is a whole agentic loop rather than one model call, so
 [who answers](#who-answers) stops being an optimisation and starts being the
@@ -335,7 +322,7 @@ preamble and then an answer arrive as two complete sentences, and the room shows
 them run together mid-sentence:
 
 ```
-…so the one-line description matches exactly.`oryxa-shim` exposes command-line…
+…so the one-line description matches exactly.The next thing to check is…
 ```
 
 Nothing in a payload says which kind of agent you have, so the connector does:

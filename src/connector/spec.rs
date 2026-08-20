@@ -442,17 +442,20 @@ mod tests {
                 "{agent} should be an ACP connector"
             );
         }
-        assert_eq!(
-            registry
-                .get("codex")
-                .unwrap()
-                .turn
-                .response
-                .as_ref()
-                .unwrap()
-                .join,
-            "\n\n"
-        );
+        // Every coding connector reads the room and writes back to it. One
+        // without the prompt is in the room unable to see it; one without the
+        // context rule leaves nothing for the others to read.
+        for agent in ["codex-local", "claude-code-local"] {
+            let spec = registry.get(agent).unwrap();
+            assert!(
+                spec.acp_prompt().contains("{{context}}"),
+                "{agent} is sent the room"
+            );
+            assert!(
+                !spec.context.is_empty(),
+                "{agent} contributes back to the room"
+            );
+        }
     }
 
     #[test]

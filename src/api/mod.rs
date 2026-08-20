@@ -258,7 +258,7 @@ async fn health() -> Json<Value> {
 }
 
 async fn viewer() -> Html<&'static str> {
-    Html(include_str!("../../internal/web/assets/index.html"))
+    Html(include_str!("../../web/index.html"))
 }
 
 async fn require_auth(State(state): State<AppState>, request: Request, next: Next) -> Response {

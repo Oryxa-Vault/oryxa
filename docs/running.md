@@ -198,36 +198,14 @@ users build agents in a UI would onboard one. `POST /v1/agents/{name}/check`
 runs a real turn and returns structured diagnostics, which is the Test
 Connection button already written.
 
-## A Go client
-
-[`client/`](../client) is the only non-internal Go package, and the reason is
-narrow: it is a thin wrapper over `/v1`, so it is stable exactly as far as `/v1`
-is.
-
-```go
-import "github.com/Oryxa-Vault/oryxa/client"
-
-c := client.New("http://localhost:8080")
-room, _ := c.Open(ctx, "researcher", "critic")
-
-in, _ := c.Say(ctx, room.ID, "priya", "what should we do about the budget")
-// in.Wake = ["researcher"], in.Why = "interest: budget"
-
-c.Stream(ctx, room.ID, 0, func(ev client.Event) bool {
-    fmt.Println(ev.Kind, ev.Actor)
-    return true
-})
-```
-
-Nothing requires it. The HTTP API is the contract and any language can call it.
-
 ## Stability
 
 `/v1` is stable. The connector spec is stable and additive — new fields, never
 changed meanings — so a connector written today keeps working.
 
-Everything else stays `internal/` until 1.0: those interfaces are young, and
-exporting one is a promise that cannot be withdrawn.
+Everything inside the crate stays unstable until 1.0: those interfaces are
+young, and publishing one is a promise that cannot be withdrawn. Write against
+`/v1` and `openapi.yaml`, which are checked against the router by a test.
 
 See [SECURITY.md](../SECURITY.md) for the posture as a whole, and what it does
 not cover.
