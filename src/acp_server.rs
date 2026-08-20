@@ -349,6 +349,15 @@ fn render(
                 &format!("\n\n_{} said nothing — {reason}_\n", event.actor),
             );
         }
+        "lane.unavailable" => {
+            let error = data["error"].as_str().unwrap_or_default();
+            speaking.clear();
+            notify(
+                connection,
+                session,
+                &format!("\n\n_{} could not start: {error}_\n", event.actor),
+            );
+        }
         "turn.failed" => {
             running.remove(&event.turn);
             let error = data["error"].as_str().unwrap_or_default();

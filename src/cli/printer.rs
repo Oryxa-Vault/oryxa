@@ -130,6 +130,13 @@ impl Printer {
                     self.line(format_args!("      [{}]", selectors.join("  ")));
                 }
             }
+            "lane.unavailable" => {
+                self.end_line();
+                self.line(format_args!(
+                    "  {} could not start: {}",
+                    event.actor, data.error
+                ));
+            }
             "turn.failed" => {
                 self.end_line();
                 self.line(format_args!("  {} failed: {}", event.actor, data.error));

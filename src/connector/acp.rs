@@ -237,9 +237,26 @@ async fn spawn_lane(
         .acp
         .as_ref()
         .ok_or_else(|| anyhow!("connector is not configured for ACP"))?;
-    let cwd = PathBuf::from(context.render_string(&acp.cwd));
+    let rendered = context.render_string(&acp.cwd);
+    let cwd = PathBuf::from(&rendered);
+    // Empty and relative are different mistakes. Empty is almost always an
+    // environment variable nobody set, and the old message — "must be an
+    // absolute path, got """ — named neither the variable nor the fix, which
+    // is a poor first thing to meet: it is what a coding agent does instead of
+    // answering the first message in a room.
+    if rendered.trim().is_empty() {
+        bail!(
+            "this agent has no workspace: {} rendered empty.\n  \
+             It names the directory the agent may write in, so nothing is guessed for it — \
+             set it to a checkout you can throw away.",
+            acp.cwd
+        );
+    }
     if !cwd.is_absolute() {
-        bail!("rendered acp.cwd must be an absolute path, got {:?}", cwd);
+        bail!(
+            "this agent's workspace must be an absolute path: {} rendered {rendered:?}",
+            acp.cwd
+        );
     }
 
     let command = context.render_string(&acp.command);
