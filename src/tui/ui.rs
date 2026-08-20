@@ -40,7 +40,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // Before anything else and instead of everything else: the risks are on it,
     // and a warning behind a room is a warning nobody read.
     if app.welcome {
-        crate::tui::welcome::draw(frame, area);
+        crate::tui::welcome::draw(frame, area, &app.workspace);
         return;
     }
     let [header, body, footer] = Layout::vertical([
@@ -194,6 +194,9 @@ fn draw_new_room(frame: &mut Frame, app: &mut App, area: Rect) {
         frame.render_widget(Paragraph::new(text).style(Style::new().fg(DIM)), area);
         return;
     }
+    // Named before the agents are chosen, not after they have written
+    // something. This is the only screen where the choice is still open.
+    let workspace = app.workspace.clone();
     let items = screen
         .connectors
         .iter()
@@ -210,9 +213,32 @@ fn draw_new_room(frame: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect::<Vec<_>>();
     let mut state = ListState::default().with_selected(Some(screen.selected));
+    if workspace.is_empty() {
+        frame.render_stateful_widget(
+            List::new(items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+            area,
+            &mut state,
+        );
+        return;
+    }
+    let [banner, list] = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::default(),
+            Line::from(vec![
+                Span::styled("  workspace  ", Style::new().fg(DIM)),
+                Span::styled(workspace, Style::new().fg(Color::Yellow).bold()),
+            ]),
+            Line::from(Span::styled(
+                "  the agents you choose can read and write here",
+                Style::new().fg(DIM),
+            )),
+        ]),
+        banner,
+    );
     frame.render_stateful_widget(
         List::new(items).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
-        area,
+        list,
         &mut state,
     );
 }

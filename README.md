@@ -57,7 +57,7 @@ ones an editor launches — pinned to the versions the ACP registry names, so a
 room and an editor are running identical agents:
 
 ```bash
-export ORYXA_WORKSPACE=/a/checkout/you/can/throw/away   # they can write here
+cd /a/checkout/you/can/throw/away             # they read and write here
 
 oryxa check codex-local                       # a real turn, before a room
 oryxa serve &

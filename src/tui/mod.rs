@@ -31,7 +31,12 @@ use crate::{
     tui::app::{App, Screen},
 };
 
-pub async fn run(options: ServerOptions, express: bool, show_welcome: bool) -> Result<()> {
+pub async fn run(
+    options: ServerOptions,
+    express: bool,
+    show_welcome: bool,
+    workspace: Option<String>,
+) -> Result<()> {
     let (client, local) = attach_or_start(
         &options.server,
         &options.token,
@@ -40,7 +45,15 @@ pub async fn run(options: ServerOptions, express: bool, show_welcome: bool) -> R
     )
     .await?;
     let mut terminal = enter()?;
-    let result = loop_until_quit(&mut terminal, client, local, express, show_welcome).await;
+    let result = loop_until_quit(
+        &mut terminal,
+        client,
+        local,
+        express,
+        show_welcome,
+        workspace,
+    )
+    .await;
     leave(terminal)?;
     result
 }
@@ -79,6 +92,7 @@ async fn loop_until_quit(
     local: Option<PathBuf>,
     express: bool,
     show_welcome: bool,
+    workspace: Option<String>,
 ) -> Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let mut app = App::new(client, tx, local);
@@ -86,6 +100,17 @@ async fn loop_until_quit(
     // Only true when this view started the runtime: attaching to someone
     // else's server does not change how that server answers.
     app.express = express && app.local_connectors.is_some();
+    // Said outright, or the directory this was run in — but only when this view
+    // started the runtime. Attached to somebody else's server the directory is
+    // theirs, and a path from this machine would either fail to exist or, worse,
+    // exist and mean something different.
+    app.workspace = match workspace {
+        Some(named) => named,
+        None if app.local_connectors.is_some() => std::env::current_dir()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        None => String::new(),
+    };
     let mut keys = EventStream::new();
 
     loop {

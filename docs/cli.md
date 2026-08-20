@@ -31,6 +31,12 @@ back.
 No command, and you are in the rooms. It follows the live stream, so you watch
 several agents answer at once rather than reading it back afterwards.
 
+**Rooms opened here work in the directory you ran it in**, and the coding agents
+in them read and write there as local processes. The welcome screen and the
+agent-choosing screen both name it before anything is opened, and `--workspace`
+points somewhere else. Attached to somebody else's server the directory is
+theirs, so nothing local is assumed.
+
 **With no server running it starts one**, in-process, against an append-only
 file under `~/Library/Application Support/Oryxa` on macOS and
 `~/.local/share/oryxa` elsewhere. Rooms survive quitting it. The runtime is
@@ -224,6 +230,7 @@ Every command takes `--json` for scripting.
 | `--server URL` | a running Oryxa (`ORYXA_URL`) |
 | `--token TOKEN` | API token (`ORYXA_TOKEN`) |
 | `--secret SECRET` | room secret, for a room this machine did not open (`ORYXA_SESSION_SECRET`) |
+| `--workspace DIR` | the directory rooms work in, and where their agents may write (`ORYXA_WORKSPACE`) |
 
 Rooms opened on this machine are remembered in `~/.config/oryxa/rooms.json`, at
 mode 0600, so `--secret` is for joining someone else's.

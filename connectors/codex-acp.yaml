@@ -16,14 +16,22 @@
 # gave it, which is rarely the one your shell has. If your node lives somewhere
 # else, this is a file — say so here.
 #
-#   export ORYXA_WORKSPACE=/path/to/a/checkout    # the agent can write here
+# The agent writes in the room's workspace, which is the directory you ran the
+# room view in unless something said otherwise. Run it somewhere you would not
+# mind an agent editing.
 name: codex-local
 
 acp:
   command: npx
   args: [-y, "@agentclientprotocol/codex-acp@1.4.0"]
-  # Named rather than taken from the room, because this agent can write here.
-  cwd: "{{env.ORYXA_WORKSPACE}}"
+  # The room's workspace, which is where the agent may write.
+  #
+  # Resolved by the runtime, not read from the environment here: a room is
+  # created with a directory, and everything in that room agrees on it. The
+  # room view uses the directory you ran it in, an editor uses the project it
+  # has open, `oryxa open --workspace` says so outright, and ORYXA_WORKSPACE is
+  # the fallback when nothing else did. It is canonicalised and must exist.
+  cwd: "{{workspace}}"
   env:
     PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
     INITIAL_AGENT_MODE: agent

@@ -51,7 +51,7 @@ pub fn remember_seen() {
     let _ = fs::write(path, "");
 }
 
-pub fn draw(frame: &mut Frame, area: Rect) {
+pub fn draw(frame: &mut Frame, area: Rect, workspace: &str) {
     let mut lines = Vec::new();
     lines.push(Line::from(Span::styled(
         "   Multiplayer AI — many people and many agents in one room, live.",
@@ -107,19 +107,27 @@ pub fn draw(frame: &mut Frame, area: Rect) {
     // Stated before anything can act, because after is too late for the only
     // one of these that cannot be undone.
     section(&mut lines, "What a room can do to this machine");
+    if !workspace.is_empty() {
+        // The directory, named, before anything has been opened in it. This is
+        // where you ran the command, and it is what the agents get.
+        lines.push(Line::from(vec![
+            Span::raw("     "),
+            Span::styled("workspace  ", Style::new().fg(DIM)),
+            Span::styled(
+                workspace.to_string(),
+                Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+    }
     for warning in [
-        "Coding agents run as local processes and can write inside the workspace",
-        "their connector names — anyone who can reach the room can cause that.",
-        "Point them at a checkout you can throw away. --express answers every",
-        "permission request with the agent's own allow, and asks nobody.",
+        "Rooms opened here work in that directory, and the coding agents in them",
+        "read and write in it as local processes. Anyone who can reach the room",
+        "can cause that, so run this somewhere you would not mind an agent",
+        "editing. --workspace names a different one.",
     ] {
         lines.push(Line::from(Span::styled(
             format!("     {warning}"),
-            Style::new().fg(if warning.is_empty() {
-                DIM
-            } else {
-                Color::Yellow
-            }),
+            Style::new().fg(Color::Yellow),
         )));
     }
     lines.push(Line::default());

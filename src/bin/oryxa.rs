@@ -31,6 +31,10 @@ struct Cli {
     /// do to this machine.
     #[arg(long, default_value_t = false)]
     welcome: bool,
+    /// The directory rooms opened here work in, and where their agents may
+    /// write. Defaults to the directory you ran this in.
+    #[arg(long)]
+    workspace: Option<String>,
     #[command(flatten)]
     options: ServerOptions,
 }
@@ -281,7 +285,7 @@ fn speaker() -> String {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        None => tui::run(cli.options, cli.express, cli.welcome).await,
+        None => tui::run(cli.options, cli.express, cli.welcome, cli.workspace).await,
         Some(Command::Serve(options)) => serve(options).await,
         Some(Command::Agents(options)) => agents(options),
         Some(Command::Which(options)) => which(options),

@@ -203,6 +203,10 @@ pub struct App {
     /// a mode this consequential must never be something you have to remember
     /// you turned on.
     pub express: bool,
+    /// The directory rooms opened here will work in, when this view is the one
+    /// deciding. Empty when attached to somebody else's server, where the
+    /// directory is theirs and a local path would mean nothing.
+    pub workspace: String,
     pub error: Option<String>,
     pub note: Option<String>,
     pub help: bool,
@@ -229,6 +233,7 @@ impl App {
             server,
             local_connectors,
             express: false,
+            workspace: String::new(),
             error: None,
             note: None,
             help: false,
@@ -286,9 +291,13 @@ impl App {
 
     pub fn open(&self, agents: Vec<String>) {
         let (client, tx) = (self.client.clone(), self.tx.clone());
+        let workspace = self.workspace.clone();
         tokio::spawn(async move {
             match client
-                .post::<Value>("/v1/sessions", json!({"agents": agents}))
+                .post::<Value>(
+                    "/v1/sessions",
+                    json!({"agents": agents, "workspace": workspace}),
+                )
                 .await
             {
                 Ok(opened) => {
