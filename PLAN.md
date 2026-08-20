@@ -50,9 +50,11 @@ People talk to a room; Oryxa drives the agents in it.
    └───────┘ └───────┘
 ```
 
-**Connecting an agent is one YAML file.** A connector describes HTTP calls —
+**Connecting an agent is one YAML file.** An HTTP connector describes calls —
 optionally *open* a conversation, then *run a turn* — and where the answer text
-sits. Nothing in the core knows any framework's name; CI enforces that.
+sits. A local ACP connector instead names an operator-controlled executable and
+absolute workspace. Nothing in the core knows any framework's name; CI enforces
+that.
 
 Full reference: [docs/integrating.md](docs/integrating.md).
 
@@ -64,8 +66,23 @@ Full reference: [docs/integrating.md](docs/integrating.md).
 gates and declared capabilities. `oryxa check` probes one with a real turn and
 warns about the ways a connector can pass while being quietly wrong.
 
+**ACP coding-agent lanes.** ACP v1 over stdio is a first-class local transport.
+Each room-agent lane owns one long-lived subprocess and one ACP session. The
+runtime negotiates capabilities, streams text, thought and opaque activity,
+sends protocol cancellation, closes the child with the room, and records the
+session ID so restart rehydration can use `session/load`. The protected HTTP shim
+remains the fallback for command agents without ACP.
+
+ACP process configuration is accepted only from files loaded by the operator.
+Even `--allow-private-agents` does not permit a runtime API registration to name
+a command. Client filesystem and terminal capabilities are not advertised yet.
+Permission requests are brokered by whoever is in the room: the room view puts
+the agent's own options in front of the person and answers the waiting lane,
+`oryxa approve` does the same from a script, and an unanswered request is
+recorded and cancelled with the turn.
+
 **Sessions.** Many people, one or more agents. Each agent has its own **lane** —
-a cursor into what the room has said, its own goroutine, its own conversation
+a cursor into what the room has said, its own task, its own conversation
 handle.
 
 Listening and speaking are different acts, and a lane keeps a cursor rather than
@@ -199,8 +216,9 @@ clients; the viewer exchanges it for an HttpOnly cookie because `EventSource`
 cannot set headers and the stream needs authenticating too. Off by default, and
 the server says so at startup.
 
-**CLI.** `serve`, `launch window`, `check`. Graceful shutdown on SIGTERM, so a
-restart drains rather than manufacturing turns whose outcome is unknown.
+**CLI.** `serve`, `check`, the room commands, and the room view `oryxa` opens
+with no command at all. Graceful shutdown on SIGTERM, so a restart drains rather
+than manufacturing turns whose outcome is unknown.
 15MB scratch image.
 
 **Command-line agents.** `oryxa-shim` serves an agent that has no HTTP surface —
@@ -530,6 +548,41 @@ currently the right call — `events.Store` gained a method this week, which wou
 have been a breaking change to a published interface — but it should be a stated
 decision rather than something people discover. `events.Store` is the first
 thing worth exporting, when someone names a second implementation.
+
+### The terminal path
+
+The first product on the API is the room view: `oryxa` with no command. It is
+the same binary as the server and the same one a script calls, which is what
+makes a single installer honest — there is nothing else to fetch.
+
+It was going to be a native macOS application. That was the wrong first product
+for this API, for reasons worth writing down rather than rediscovering:
+
+- **The users are already in a terminal.** The room exists to put Claude Code
+  and Codex on one question. Both are terminal programs, run by people whose
+  editor and shell are the tools they work in. A window beside the terminal is a
+  context switch in the middle of a coding turn.
+- **One binary or four artefacts.** A signed, notarized app is a distribution
+  project of its own — certificates, entitlements, an update channel — and it is
+  a Mac. The room view is a `curl` on every machine anyone runs an agent on,
+  including the Linux box the agents are actually running on.
+- **Two clients drift.** The app was a second implementation of the room: its
+  own projection of the event stream, its own idea of a lane, its own approval
+  flow. Every feature was going to be built twice, and the second one was always
+  going to be behind.
+
+What the app was going to own that a terminal must still own, and now does:
+supervising a local runtime so there is nothing to install alongside it,
+persisting rooms across restarts, and brokering ACP permission requests with the
+agent's exact options. What it was going to own that is now deliberately not
+built: coding-tool discovery, editor handoff, and Keychain. Connectors are files
+an operator writes, room secrets are a 0600 file in the user's config directory,
+and discovering an installed tool is a thing a person does once.
+
+The interface direction that survives is the boundary language: every failure
+names the boundary it came from — runtime, connector, shim, tool, network — and
+no operation that spends money or changes a workspace is disguised as a health
+check.
 
 ### The UI-builder path
 

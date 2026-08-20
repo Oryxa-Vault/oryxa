@@ -197,7 +197,7 @@ An agent that stays quiet loses nothing. Its cursor holds, so when it is finally
 asked its turn covers everything it sat through.
 
 ```bash
-oryxa wake "a message someone would type" -people priya,arsh
+oryxa wake "a message someone would type" --people priya,arsh
 ```
 
 Prints who answers and why, and for everyone silent, what would have reached

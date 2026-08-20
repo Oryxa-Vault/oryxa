@@ -31,7 +31,14 @@ marked unverified. That's still worth having.
 ## Working on the core
 
 ```bash
-go test ./...           # unit + end-to-end
+cargo test --all-targets                        # unit + end-to-end
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+```
+
+`oryxa-shim` and the Go client package are still Go, and have their own:
+
+```bash
 go test -race ./...     # required; the session loop is concurrent
 go vet ./... && gofmt -l .
 ```
@@ -39,8 +46,8 @@ go vet ./... && gofmt -l .
 Two rules the codebase enforces on itself:
 
 **No framework names outside `connectors/`.** The core knows about `Connector`,
-never about ADK or LangGraph. `grep -ri "langgraph\|crewai\|adk" internal/`
-should return nothing.
+never about ADK or LangGraph. `grep -ri "langgraph\|crewai\|adk" src/`
+should return nothing outside comments and tests.
 
 **The log is append-only.** Never coalesce, dedupe or batch writes to it. Derived
 views may compact; the log may not. Replay, late-join and audit all break quietly
@@ -74,7 +81,7 @@ separates a connector problem from an agent problem in seconds.
 ## Pull requests
 
 - Branch from `main`, keep the PR focused on one thing.
-- `go test -race ./...` green before you open it.
+- `cargo test --all-targets` and `go test -race ./...` green before you open it.
 - Explain **why** in the description. The what is in the diff.
 - Draft PRs are welcome — open one early if you want a second opinion on an
   approach before you finish it.

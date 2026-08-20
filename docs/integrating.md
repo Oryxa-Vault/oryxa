@@ -470,7 +470,7 @@ This is a rendering bound, not a delete. `GET /v1/sessions/{id}/context` and the
 event log still hold every item; only the prompt is trimmed.
 
 **And the trimmed part can be summarised rather than just counted.** Start Oryxa
-with `-summariser <connector>` and once more than ten items have fallen off, the
+with `--summariser <connector>` and once more than ten items have fallen off, the
 marker becomes what they said:
 
 ```
@@ -569,7 +569,7 @@ through — including the parts addressed to other people.
 **When it does not do what you expect**, ask it directly. No server needed:
 
 ```bash
-oryxa wake "we should consider using more ai tools" -people priya,arsh
+oryxa wake "we should consider using more ai tools" --people priya,arsh
 ```
 
 ```
@@ -611,7 +611,7 @@ the connector file.
 ### Who Oryxa says is talking
 
 Input carries an author. By default it is whatever the caller claims. Run the
-server with `-trust-header X-Forwarded-User` (or whichever header your proxy
+server with `--trust-header X-Forwarded-User` (or whichever header your proxy
 sets) and it comes from there instead, so the log records people rather than
 claims. Oryxa has no accounts of its own on purpose — your deployment already
 has identity.

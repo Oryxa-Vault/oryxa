@@ -347,6 +347,64 @@ paths:
         "202": { description: Cancelling. }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /v1/sessions/{id}/interactions:
+    parameters: [{ $ref: "#/components/parameters/SessionID" }]
+    get:
+      tags: [sessions]
+      summary: List decisions waiting for a person.
+      description: |
+        Currently exposes live ACP permission requests. Each option ID is
+        supplied by the agent and must be returned unchanged when resolving it.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  interactions:
+                    type: array
+                    items: { $ref: "#/components/schemas/PendingInteraction" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/interactions/{interaction}/resolve:
+    parameters:
+      - { $ref: "#/components/parameters/SessionID" }
+      - name: interaction
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [sessions]
+      summary: Resolve or cancel a pending agent decision.
+      description: |
+        Send exactly one of `option_id` or `cancel: true`. A decision is accepted
+        once; repeated or stale responses return 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                author: { type: string }
+                option_id: { type: string }
+                cancel: { type: boolean, default: false }
+      responses:
+        "200":
+          description: The response was delivered to the waiting agent.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  interaction: { $ref: "#/components/schemas/PendingInteraction" }
+                  outcome: { type: string, enum: [selected, cancelled] }
+                  option_id: { type: string }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/sessions/{id}/close:
     parameters: [{ $ref: "#/components/parameters/SessionID" }]
     post:
@@ -590,7 +648,7 @@ components:
       description: |
         How to reach one agent. Nothing in Oryxa's core knows any framework's
         name; everything framework-specific lives here.
-      required: [name, base, turn]
+      required: [name]
       properties:
         name: { type: string }
         base:
@@ -598,6 +656,12 @@ components:
           description: |
             Templated, so one file works on a machine and in a container —
             `http://{{env.ORYXA_AGENT_HOST}}:2024`.
+        acp:
+          allOf: [{ $ref: "#/components/schemas/AcpTransport" }]
+          readOnly: true
+          description: |
+            Local ACP subprocess configuration loaded from an operator-controlled
+            file. Runtime API registration always rejects this field.
         headers:
           type: object
           additionalProperties: { type: string }
@@ -624,6 +688,21 @@ components:
           type: array
           items: { $ref: "#/components/schemas/ContextRule" }
           description: What this agent leaves behind for everyone else.
+
+    AcpTransport:
+      type: object
+      required: [command, cwd]
+      properties:
+        command:
+          type: string
+          description: Executable name or path. Oryxa does not invoke a shell.
+        args: { type: array, items: { type: string } }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        cwd:
+          type: string
+          description: Absolute workspace path, optionally templated.
 
     Step:
       type: object
@@ -769,6 +848,31 @@ components:
         error: { type: string }
         group: { type: string }
 
+    PendingInteraction:
+      type: object
+      description: A live ACP request waiting for a user decision.
+      required: [id, session, turn, agent, kind, title, request, options, created]
+      properties:
+        id: { type: string, format: uuid }
+        session: { type: string }
+        turn: { type: string }
+        agent: { type: string }
+        kind: { type: string, enum: [permission] }
+        title: { type: string }
+        request: { description: The original ACP request payload. }
+        options:
+          type: array
+          items:
+            type: object
+            required: [id, name, kind]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              kind:
+                type: string
+                enum: [allow_once, allow_always, reject_once, reject_always]
+        created: { type: string, format: date-time }
+
     ContextEntry:
       type: object
       properties:
@@ -824,6 +928,8 @@ components:
             `turn.started` · `turn.finished` · `turn.failed` · `turn.cancelled` ·
             `turn.empty` — succeeded and said nothing, with the connector's own
             selectors attached ·
+            `interaction.requested` · `interaction.resolution_requested` ·
+            `interaction.resolved` · `interaction.cancel_requested` ·
             `output.part` · `context.appended` · `context.set` ·
             `context.pinned` · `context.unpinned` · `context.rejected` ·
             `context.rolled_up` · `rollup.failed` · `conflict.rejected`

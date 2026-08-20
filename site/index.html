@@ -1,600 +1,166 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<title>Oryxa — multiplayer AI: many people, many agents, one room</title>
-<meta name="description" content="Multiplayer AI. Put Claude Code and Codex in one room, on one question, watched by your whole team — live streaming, an append-only event log, and declarative connectors for any agent. Apache 2.0, Go.">
-<link rel="canonical" href="https://oryxa-vault.github.io/oryxa/">
-
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Oryxa">
-<meta property="og:title" content="Oryxa — multiplayer AI: many people, many agents, one room">
-<meta property="og:description" content="Put Claude Code and Codex in one room, on one question, watched by your whole team. Neither CLI modified, neither knows the other is there. Apache 2.0, Go.">
-<meta property="og:url" content="https://oryxa-vault.github.io/oryxa/">
-<meta property="og:image" content="https://oryxa-vault.github.io/oryxa/og.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Oryxa — multiplayer AI: many people, many agents, one room">
-<meta name="twitter:description" content="Put Claude Code and Codex in one room, on one question, watched by your whole team. Apache 2.0, Go.">
-<meta name="twitter:image" content="https://oryxa-vault.github.io/oryxa/og.png">
-
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0f10'/%3E%3Crect x='3' y='3' width='10' height='10' fill='%233ddc97'/%3E%3C/svg%3E">
-
-<style>
-  *, *::before, *::after { box-sizing: border-box; }
-  body, h1, h2, h3, p, figure, blockquote { margin: 0; }
-
-  :root {
-    --ground:      #0b0f10;
-    --panel:       #12181a;
-    --panel-2:     #161d1f;
-    --rule:        #232c2e;
-    --ink:         #d8e0dd;
-    --ink-strong:  #f2f7f5;
-    --muted:       #7d8a87;
-    --faint:       #5b6664;
-
-    --analyst:     #3ddc97;
-    --cfo:         #a78bfa;
-    --comms:       #fbbf24;
-    --accent:      #3ddc97;
-    --accent-dim:  #1d5f45;
-
-    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-
-    --measure: 66ch;
-    --shell: 1080px;
-    color-scheme: dark;
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f5">
+  <title>Oryxa — The infrastructure behind multiplayer AI</title>
+  <meta name="description" content="Oryxa is the open-source multiplayer AI infrastructure for shared sessions where people, coding agents and AI frameworks work together live.">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+  <meta name="author" content="Oryxa">
+  <link rel="canonical" href="https://oryxa.in/">
+  <link rel="alternate" type="text/plain" href="https://oryxa.in/llms.txt" title="Oryxa agent discovery">
+  <link rel="alternate" type="application/yaml" href="https://oryxa.in/openapi.yaml" title="Oryxa OpenAPI specification">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Oryxa">
+  <meta property="og:title" content="Oryxa — The infrastructure behind multiplayer AI">
+  <meta property="og:description" content="Open-source multiplayer AI infrastructure. Many people, many agents, one shared room.">
+  <meta property="og:url" content="https://oryxa.in/">
+  <meta property="og:image" content="https://oryxa.in/og.png">
+  <meta property="og:image:secure_url" content="https://oryxa.in/og.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Oryxa — the infrastructure behind multiplayer AI">
+  <meta property="og:locale" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Oryxa — The infrastructure behind multiplayer AI">
+  <meta name="twitter:description" content="Open-source multiplayer AI infrastructure. Many people, many agents, one shared room.">
+  <meta name="twitter:image" content="https://oryxa.in/og.png">
+  <meta name="twitter:image:alt" content="Oryxa — the infrastructure behind multiplayer AI">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%231b1b1a'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23f7f7f5'/%3E%3C/svg%3E">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://oryxa.in/#organization",
+        "name": "Oryxa",
+        "url": "https://oryxa.in/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://oryxa.in/og.png",
+          "width": 1200,
+          "height": 630
+        },
+        "sameAs": ["https://github.com/Oryxa-Vault/oryxa"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://oryxa.in/#website",
+        "url": "https://oryxa.in/",
+        "name": "Oryxa",
+        "description": "Open-source multiplayer AI infrastructure for shared sessions where people and AI agents work together live.",
+        "publisher": { "@id": "https://oryxa.in/#organization" },
+        "inLanguage": "en"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://oryxa.in/#software",
+        "name": "Oryxa",
+        "url": "https://oryxa.in/",
+        "downloadUrl": "https://oryxa.in/install.sh",
+        "softwareVersion": "0.5.2",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "AI agent coordination infrastructure",
+        "operatingSystem": "Linux, macOS",
+        "description": "A shared runtime, event log and connector layer for multiplayer AI sessions with people and multiple agents.",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "isAccessibleForFree": true,
+        "publisher": { "@id": "https://oryxa.in/#organization" },
+        "offers": {
+          "@type": "Offer",
+          "url": "https://github.com/Oryxa-Vault/oryxa",
+          "price": "0",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock"
+        }
+      },
+      {
+        "@type": "SoftwareSourceCode",
+        "@id": "https://oryxa.in/#source",
+        "name": "Oryxa source code",
+        "description": "Source code for the Oryxa multiplayer AI runtime, CLI and connector engine.",
+        "codeRepository": "https://github.com/Oryxa-Vault/oryxa",
+        "programmingLanguage": "Rust",
+        "runtimePlatform": "Linux, macOS",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "isPartOf": { "@id": "https://oryxa.in/#software" }
+      }
+    ]
   }
-
-  @media (prefers-color-scheme: light) {
-    :root {
-      --ground: #f2f5f4; --panel: #ffffff; --panel-2: #e9eeec; --rule: #d2dbd8;
-      --ink: #1b2422; --ink-strong: #060b0a; --muted: #5c6a67; --faint: #7f8c89;
-      --analyst: #0d7a52; --cfo: #5b3fc4; --comms: #96600a;
-      --accent: #0d7a52; --accent-dim: #a8ddc7;
-      color-scheme: light;
-    }
-  }
-
-  :root[data-theme="dark"] {
-    --ground: #0b0f10; --panel: #12181a; --panel-2: #161d1f; --rule: #232c2e;
-    --ink: #d8e0dd; --ink-strong: #f2f7f5; --muted: #7d8a87; --faint: #5b6664;
-    --analyst: #3ddc97; --cfo: #a78bfa; --comms: #fbbf24;
-    --accent: #3ddc97; --accent-dim: #1d5f45;
-    color-scheme: dark;
-  }
-
-  :root[data-theme="light"] {
-    --ground: #f2f5f4; --panel: #ffffff; --panel-2: #e9eeec; --rule: #d2dbd8;
-    --ink: #1b2422; --ink-strong: #060b0a; --muted: #5c6a67; --faint: #7f8c89;
-    --analyst: #0d7a52; --cfo: #5b3fc4; --comms: #96600a;
-    --accent: #0d7a52; --accent-dim: #a8ddc7;
-    color-scheme: light;
-  }
-
-  body {
-    background: var(--ground);
-    color: var(--ink);
-    font-family: var(--sans);
-    font-size: 17px;
-    line-height: 1.65;
-    -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
-  }
-
-  .wrap { max-width: var(--shell); margin: 0 auto; padding: 0 24px; }
-  .col { max-width: var(--measure); }
-
-  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
-  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-
-  code { font-family: var(--mono); font-size: 0.92em; }
-  img { max-width: 100%; display: block; }
-
-  /* ---------- masthead ---------- */
-
-  .masthead {
-    display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
-    padding: 28px 0 14px;
-    border-bottom: 1px solid var(--rule);
-  }
-  .wordmark {
-    font-family: var(--mono); font-size: 15px; font-weight: 700;
-    letter-spacing: 0.34em; color: var(--accent); text-transform: uppercase;
-  }
-  .tagline { font-family: var(--mono); font-size: 13px; color: var(--muted); }
-  .masthead .spacer { flex: 1 1 auto; }
-  .masthead .meta {
-    font-family: var(--mono); font-size: 12px; color: var(--faint); letter-spacing: 0.04em;
-  }
-
-  /* ---------- hero ---------- */
-
-  .hero { padding: 72px 0 0; }
-
-  h1 {
-    font-family: var(--mono); font-weight: 700;
-    font-size: clamp(30px, 5.2vw, 50px);
-    line-height: 1.08; letter-spacing: -0.02em;
-    color: var(--ink-strong); text-wrap: balance;
-    margin-bottom: 26px;
-  }
-  h1 .quiet { color: var(--muted); display: block; font-weight: 400; }
-
-  .standfirst {
-    font-size: 19px; color: var(--ink);
-    max-width: var(--measure); margin-bottom: 30px;
-  }
-  .standfirst strong { color: var(--ink-strong); font-weight: 600; }
-
-  .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-  .btn {
-    font-family: var(--mono); font-size: 13.5px;
-    padding: 10px 18px;
-    border: 1px solid var(--rule);
-    background: var(--panel);
-    color: var(--ink-strong);
-    text-decoration: none; display: inline-block;
-    transition: border-color .15s, color .15s;
-  }
-  .btn:hover { border-color: var(--accent); color: var(--accent); }
-  .btn.primary {
-    border-color: var(--accent-dim);
-    background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-    color: var(--accent);
-  }
-  .btn.primary:hover { border-color: var(--accent); }
-
-  /* ---------- the recording ---------- */
-
-  .shot { margin-top: 46px; border: 1px solid var(--rule); background: var(--panel); }
-  .shot img { width: 100%; }
-  .shot figcaption {
-    border-top: 1px solid var(--rule);
-    padding: 11px 18px;
-    font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
-    color: var(--faint); background: var(--panel-2);
-  }
-
-  /* ---------- sections ---------- */
-
-  section { padding: 68px 0 0; }
-  .eyebrow {
-    font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: var(--faint); margin-bottom: 14px;
-  }
-  h2 {
-    font-family: var(--mono); font-size: clamp(21px, 3vw, 27px); font-weight: 700;
-    letter-spacing: -0.01em; color: var(--ink-strong); line-height: 1.25;
-    text-wrap: balance; margin-bottom: 16px;
-  }
-  h3 { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--ink-strong); margin-bottom: 8px; }
-  section p { max-width: var(--measure); margin-bottom: 14px; }
-  section p:last-child { margin-bottom: 0; }
-  strong { color: var(--ink-strong); font-weight: 600; }
-
-  .rule { height: 1px; background: var(--rule); margin-top: 68px; }
-
-  /* ---------- transcript ---------- */
-
-  .room { margin-top: 26px; background: var(--panel); border: 1px solid var(--rule); }
-  .transcript {
-    padding: 20px 18px; display: flex; flex-direction: column; gap: 13px;
-    font-family: var(--mono); font-size: 13.5px; line-height: 1.6;
-  }
-  .msg { display: flex; flex-direction: column; gap: 5px; }
-  .msg .name { font-size: 11.5px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint); }
-  .msg .bubble { border-left: 2px solid var(--rule); padding: 6px 0 6px 13px; color: var(--ink); }
-  .msg.human .name { color: var(--muted); }
-  .msg.a .name { color: var(--analyst); }
-  .msg.a .bubble { color: var(--analyst); border-left-color: var(--analyst); }
-  .wake { font-size: 11.5px; color: var(--faint); padding-left: 15px; font-family: var(--mono); }
-  .wake b { color: var(--muted); font-weight: 600; }
-  .wake .none { color: var(--comms); }
-  .wake .hit { color: var(--analyst); }
-  .room figcaption {
-    border-top: 1px solid var(--rule); padding: 10px 18px;
-    font-family: var(--mono); font-size: 11.5px; color: var(--faint); background: var(--panel-2);
-  }
-
-  /* ---------- figures ---------- */
-
-  figure.code { margin-top: 26px; border: 1px solid var(--rule); background: var(--panel); overflow-x: auto; }
-  pre { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.62; padding: 18px; color: var(--ink); }
-  pre .c { color: var(--faint); }
-  pre .k { color: var(--cfo); }
-  pre .s { color: var(--analyst); }
-  figure.code figcaption {
-    border-top: 1px solid var(--rule); padding: 9px 18px;
-    font-family: var(--mono); font-size: 11.5px; color: var(--faint);
-    background: var(--panel-2); white-space: normal;
-  }
-
-  /* ---------- number strip ---------- */
-
-  .figures {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin-top: 30px;
-  }
-  .fig { background: var(--panel); padding: 18px; }
-  .fig .n {
-    font-family: var(--mono); font-size: 25px; font-weight: 700; color: var(--accent);
-    letter-spacing: -0.02em; font-variant-numeric: tabular-nums; display: block; margin-bottom: 5px;
-  }
-  .fig .d { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
-
-  /* ---------- table ---------- */
-
-  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); margin-top: 26px; }
-  table { border-collapse: collapse; width: 100%; min-width: 560px; background: var(--panel); }
-  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule); font-size: 13.5px; vertical-align: top; }
-  th {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--faint); background: var(--panel-2); white-space: nowrap;
-  }
-  td:first-child { font-family: var(--mono); color: var(--ink-strong); white-space: nowrap; }
-  td .shape { color: var(--muted); }
-  tr:last-child td { border-bottom: 0; }
-
-  /* ---------- limits ---------- */
-
-  .limits {
-    border: 1px solid var(--rule); border-left: 2px solid var(--comms);
-    background: var(--panel); padding: 20px 22px; margin-top: 26px;
-  }
-  .limits h3 { color: var(--comms); }
-  .limits p { font-size: 15px; color: var(--muted); max-width: none; }
-  .limits p strong { color: var(--ink); }
-
-  /* ---------- footer ---------- */
-
-  footer {
-    margin-top: 72px; border-top: 1px solid var(--rule); padding: 24px 0 60px;
-    font-family: var(--mono); font-size: 12.5px; color: var(--faint);
-    display: flex; gap: 22px; flex-wrap: wrap; align-items: center;
-  }
-  footer .spacer { flex: 1 1 auto; }
-</style>
+  </script>
+  <style>
+    :root { --paper:#f7f7f5; --paper-deep:#efefec; --ink:#1d1d1b; --muted:#8c8c89; --fine:#d8d8d4; --line:#cbcbc7; --black:#1d1d1b; --white:#fff; --shell:1200px; --sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+    * { box-sizing:border-box; } html { scroll-behavior:smooth; } body,h1,h2,h3,p,ul { margin:0; }
+    body { background:var(--paper); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+    a { color:inherit; } a:focus-visible,button:focus-visible { outline:2px solid var(--ink); outline-offset:4px; }
+    .skip-link { position:fixed; left:18px; top:14px; z-index:100; padding:10px 14px; background:var(--ink); color:var(--white); font-size:13px; text-decoration:none; transform:translateY(-180%); transition:transform .18s ease; }.skip-link:focus { transform:translateY(0); }
+    .shell { width:min(calc(100% - 48px),var(--shell)); margin:0 auto; }
+    .eyebrow { color:var(--muted); font-size:10px; font-weight:600; letter-spacing:.33em; text-transform:uppercase; }
+    .nav { position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:24px; min-height:82px; border-bottom:1px solid var(--fine); background:rgba(247,247,245,.9); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); }
+    .brand { font-size:22px; letter-spacing:-.06em; text-decoration:none; }
+    .nav-links { display:flex; align-items:center; gap:22px; color:#555552; font-size:13px; }.nav-links a { text-decoration:none; text-underline-offset:5px; }.nav-links a:hover { color:var(--ink); text-decoration:underline; }.nav-links .nav-github:hover { text-decoration:none; }
+    .nav-github { border:1px solid var(--ink); color:var(--ink)!important; padding:8px 13px; }
+    .hero { display:grid; grid-template-columns:1fr .78fr; gap:clamp(36px,7vw,116px); align-items:center; padding:clamp(88px,13vw,180px) 0 clamp(80px,12vw,150px); }.hero-copy { max-width:660px; }
+    h1 { max-width:600px; font-size:clamp(48px,6.2vw,86px); font-weight:400; letter-spacing:-.065em; line-height:.98; }.hero h1 span { color:var(--muted); }
+    .hero p { max-width:480px; margin-top:28px; color:#71716e; font-size:clamp(18px,2vw,22px); line-height:1.38; letter-spacing:-.028em; }
+    .actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:34px; }.button { display:inline-flex; align-items:center; justify-content:center; min-height:43px; padding:0 17px; border:1px solid var(--ink); background:transparent; color:var(--ink); font:inherit; font-size:13px; cursor:pointer; text-decoration:none; transition:background .18s ease,color .18s ease,transform .18s ease; }.button:hover { background:var(--ink); color:var(--white); transform:translateY(-1px); }.button.dark { background:var(--ink); color:var(--white); }.button.dark:hover { background:transparent; color:var(--ink); }
+    .network { position:relative; width:min(100%,420px); aspect-ratio:1/.72; margin-inline:auto; }.network i { position:absolute; left:50%; top:50%; width:1px; height:56%; transform-origin:50% 0; background:var(--line); }.network i:nth-of-type(1) { transform:rotate(48deg); }.network i:nth-of-type(2) { transform:rotate(132deg); }.network i:nth-of-type(3) { transform:rotate(228deg); }.network i:nth-of-type(4) { transform:rotate(312deg); }.network b,.network em { position:absolute; display:block; border-radius:50%; }.network b { top:calc(50% - 14px); left:calc(50% - 14px); width:28px; height:28px; background:var(--ink); }.network em { width:20px; height:20px; border:1px solid #969693; background:var(--paper); }.network em:nth-of-type(1) { top:5%; left:10%; }.network em:nth-of-type(2) { top:5%; right:10%; }.network em:nth-of-type(3) { bottom:5%; left:10%; }.network em:nth-of-type(4) { right:10%; bottom:5%; }
+    .foundation { background:var(--black); color:var(--white); padding:25px 30px 28px; }.foundation .eyebrow { color:#c6c6c2; }.foundation-grid { display:grid; grid-template-columns:1fr 1fr .8fr; gap:32px; margin-top:24px; }.foundation p { font-size:17px; line-height:1.5; }.foundation p:last-child { color:#b8b8b4; font-size:14px; }
+    .proof { display:grid; grid-template-columns:repeat(3,1fr); border:1px solid var(--fine); border-top:0; }.proof div { padding:20px 28px; border-right:1px solid var(--fine); }.proof div:last-child { border-right:0; }.proof strong { display:block; font-size:20px; font-weight:500; letter-spacing:-.04em; }.proof span { display:block; margin-top:3px; color:var(--muted); font-size:12px; }
+    section { padding:clamp(90px,12vw,150px) 0; }.section-heading { max-width:700px; margin-bottom:50px; }h2 { margin-top:18px; font-size:clamp(38px,5vw,66px); font-weight:400; line-height:1.02; letter-spacing:-.06em; }h2 .soft { color:var(--muted); }.lead { max-width:680px; margin-top:25px; color:#686865; font-size:20px; line-height:1.42; letter-spacing:-.024em; }
+    .definition { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }.definition article,.feature-card,.signal-card { border:1px solid var(--fine); background:rgba(255,255,255,.28); }.definition article { min-height:230px; padding:30px; }.dot { display:block; width:13px; height:13px; margin-bottom:33px; border:1px solid var(--muted); border-radius:50%; }.definition article:first-child .dot { border:0; background:var(--ink); }.definition h3,.feature-card h3,.signal-card h3 { font-size:18px; font-weight:600; letter-spacing:-.035em; }.definition p { margin-top:11px; color:var(--muted); font-size:14px; line-height:1.5; }.caption { margin-top:22px; color:var(--muted); font-size:13px; font-style:italic; text-align:center; }
+    .split { border-top:1px solid var(--fine); }.split-grid { display:grid; grid-template-columns:.9fr 1.1fr; gap:clamp(40px,10vw,160px); align-items:start; }.split-copy { max-width:405px; }.split-copy h2 { font-size:clamp(38px,4.6vw,58px); }.principles { display:grid; grid-template-columns:1fr 1fr; gap:1px; border:1px solid var(--fine); background:var(--fine); }.principles div { min-height:138px; padding:25px; background:var(--paper); }.principles strong { display:block; font-size:15px; letter-spacing:-.025em; }.principles span { display:block; margin-top:10px; color:var(--muted); font-size:13px; line-height:1.45; }
+    .product { background:var(--paper-deep); }.product-layout { display:grid; grid-template-columns:1fr 1.35fr; gap:48px; align-items:start; }.feature-list { display:grid; gap:0; border-top:1px solid var(--fine); }.feature-card { display:grid; grid-template-columns:19px 1fr; gap:15px; padding:22px 0; border-width:0 0 1px; background:transparent; }.feature-card .dot { width:11px; height:11px; margin-top:7px; margin-bottom:0; }.feature-card p { margin-top:6px; color:var(--muted); font-size:14px; }
+    .terminal { background:var(--black); color:#f3f3ef; padding:28px; min-height:100%; }.terminal .eyebrow { color:#aaa9a3; }pre { margin:25px 0 0; overflow:auto; font:13px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap; }.terminal .dim { color:#92928d; }.terminal .accent { color:#d6d6d1; }
+    .architecture { border-top:1px solid var(--fine); }.architecture-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:52px; }.architecture-grid article { min-height:240px; padding:28px; border:1px solid var(--fine); }.architecture-grid article:first-child { background:var(--black); color:var(--white); border-color:var(--black); }.architecture-grid article:first-child p { color:#bcbcb8; }.architecture-grid p { margin-top:20px; color:var(--muted); font-size:14px; }.architecture-grid ul { display:grid; gap:8px; margin-top:20px; padding:0; list-style:none; font-size:14px; }.architecture-grid li::before { content:"— "; color:var(--muted); }
+    .quickstart { padding:0; background:var(--black); color:var(--white); }.quickstart-grid { display:grid; grid-template-columns:.8fr 1.2fr; gap:clamp(40px,10vw,150px); padding:clamp(72px,10vw,118px) 0; }.quickstart h2 { font-size:clamp(38px,4.8vw,62px); }.quickstart .soft { color:#969691; }.quickstart .lead { color:#bdbdb8; }.steps { border-top:1px solid #3d3d3a; }.step { display:grid; grid-template-columns:34px 1fr; gap:17px; padding:22px 0; border-bottom:1px solid #3d3d3a; }.step-num { color:#8d8d88; font-size:12px; }.step strong { display:block; font-size:16px; font-weight:500; }.step p { margin-top:6px; color:#aeadA8; font-size:13px; }.install-box { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:26px; padding:14px 14px 14px 18px; border:1px solid #555550; background:#242422; }.install-box code { overflow:auto; color:#f2f2ed; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:nowrap; }.install-box .button { flex:none; border-color:#777772; color:var(--white); }.install-box .button:hover { background:var(--white); color:var(--ink); }
+    .close { padding-bottom:0; }.close .closing { padding:clamp(70px,10vw,130px) 0; text-align:center; }.close h2 { max-width:780px; margin:18px auto 0; }.close .actions { justify-content:center; }footer { display:flex; justify-content:space-between; gap:24px; padding:28px 0 40px; border-top:1px solid var(--fine); color:var(--muted); font-size:12px; }footer a { text-decoration:none; }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
+    @media (max-width:760px) { .shell { width:min(calc(100% - 36px),var(--shell)); }.nav { min-height:70px; }.nav-links { gap:10px; }.nav-links a:not(.nav-github):not(.nav-start) { display:none; }.nav-start { display:none; }.hero,.split-grid,.product-layout,.quickstart-grid { grid-template-columns:1fr; }.hero { padding-top:82px; }.network { width:min(100%,320px); margin-top:8px; }.foundation-grid,.definition,.architecture-grid,.proof { grid-template-columns:1fr; }.foundation-grid { gap:16px; }.proof div { border-right:0; border-bottom:1px solid var(--fine); }.proof div:last-child { border-bottom:0; }.definition article,.architecture-grid article { min-height:0; }.principles { grid-template-columns:1fr; }.install-box { align-items:stretch; flex-direction:column; }.install-box .button { align-self:flex-start; }footer { flex-direction:column; } }
+  </style>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="shell nav"><a class="brand" href="#top" aria-label="Oryxa home">oryxa</a><nav class="nav-links" aria-label="Main navigation"><a href="#product">Product</a><a href="#architecture">Architecture</a><a class="nav-start" href="#start">Get started</a><a class="nav-github" href="https://github.com/Oryxa-Vault/oryxa">GitHub ↗</a></nav></header>
+  <main id="top">
+    <section class="shell hero" id="main-content" aria-labelledby="hero-title"><div class="hero-copy"><div class="eyebrow">Multiplayer AI infrastructure</div><h1 id="hero-title">AI is becoming a team sport.<br><span>Give it a room.</span></h1><p>Oryxa is the shared layer where people and specialised AI agents can work on the same question, live.</p><div class="actions"><a class="button dark" href="#start">Get started</a><a class="button" href="https://github.com/Oryxa-Vault/oryxa">Read the source ↗</a></div></div><div class="network" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b><em></em><em></em><em></em><em></em></div></section>
+    <section class="shell foundation" aria-label="What Oryxa enables"><div class="eyebrow">What Oryxa enables</div><div class="foundation-grid"><p>Build internal AI applications<br>with a shared point of view.</p><p>Ship customer-facing products<br>where agents collaborate.</p><p>Teams own the application. Oryxa provides the framework and infrastructure underneath it.</p></div></section>
+    <div class="shell proof" aria-label="Project highlights"><div><strong>One binary</strong><span>Room, runtime, viewer and CLI</span></div><div><strong>Seven integrations</strong><span>HTTP, ACP and major agent frameworks</span></div><div><strong>Apache 2.0</strong><span>Open, inspectable and self-hosted</span></div></div>
+    <section class="shell" aria-labelledby="thesis-title"><div class="section-heading"><div class="eyebrow">The thesis</div><h2 id="thesis-title">Every agent has a job.<br><span class="soft">Oryxa gives them a room.</span></h2><p class="lead">Your prompts, tools, memory and orchestration stay where they are. Oryxa supplies the shared session, the event log and the coordination layer around them.</p></div><div class="definition"><article><span class="dot"></span><h3>People</h3><p>Watch live work, steer a conversation and join from the same shared context.</p></article><article><span class="dot"></span><h3>Agents</h3><p>Work in parallel lanes, with their own task, cursor and conversation state.</p></article><article><span class="dot"></span><h3>One room</h3><p>A durable record of what happened, what changed and what everyone needs next.</p></article></div><p class="caption">Many specialists. One shared session. A durable source of truth.</p></section>
+    <section class="split" id="architecture" aria-labelledby="architecture-title"><div class="shell split-grid"><div class="split-copy"><div class="eyebrow">What is underneath</div><h2 id="architecture-title"><span class="soft">The agent is not the product.</span> Coordination is.</h2><p class="lead">One framework cannot own a conversation shared by several people and several independent systems. That is the layer Oryxa builds.</p></div><div class="principles" aria-label="Oryxa architecture principles"><div><strong>Shared sessions</strong><span>Everyone sees the same work, live and replayable.</span></div><div><strong>Parallel lanes</strong><span>Agents answer together without blocking each other.</span></div><div><strong>Shared context</strong><span>State travels with the room, not a single model call.</span></div><div><strong>Durable events</strong><span>The log is the source of truth after every restart.</span></div></div></div></section>
+    <section class="product" id="product" aria-labelledby="product-title"><div class="shell product-layout"><div><div class="eyebrow">The product</div><h2 id="product-title">One simple surface.<br><span class="soft">Many different agents.</span></h2><p class="lead">Connect an HTTP agent or an operator-controlled local coding agent. Oryxa turns both into dependable participants in the same room.</p></div><div class="feature-list"><article class="feature-card"><span class="dot"></span><div><h3>Selective attention</h3><p>Only agents with a reason to answer are woken. Human conversation stays human.</p></div></article><article class="feature-card"><span class="dot"></span><div><h3>Independent frameworks</h3><p>Connectors describe HTTP calls. Your agents keep their prompts, tools and memory.</p></div></article><article class="feature-card"><span class="dot"></span><div><h3>Live, durable rooms</h3><p>Every turn streams live, then becomes part of the event log the room can replay.</p></div></article><article class="feature-card"><span class="dot"></span><div><h3>Operator controls</h3><p>Rooms, keys and budgets let an application decide who participates and what a turn can cost.</p></div></article></div></div></section>
+    <section class="shell architecture" aria-labelledby="connector-title"><div class="section-heading"><div class="eyebrow">Connecting agents</div><h2 id="connector-title">A connector is a description,<br><span class="soft">not another codebase.</span></h2><p class="lead">A small YAML file describes what to call and where the answer lives. The agent does not need to know that Oryxa exists.</p></div><div class="terminal"><div class="eyebrow">connectors/my-agent.yaml</div><pre><span class="accent">name</span>: my-agent
+<span class="accent">base</span>: http://localhost:5000
 
-<div class="wrap">
-
-  <header class="masthead">
-    <span class="wordmark">Oryxa</span>
-    <span class="tagline">multiplayer AI — many people, many agents, one room</span>
-    <span class="spacer"></span>
-    <span class="meta">v0.5 · Apache 2.0 · Go</span>
-  </header>
-
-  <div class="hero">
-    <h1>AI is single-player.<span class="quiet">Oryxa makes it multiplayer.</span></h1>
-
-    <p class="standfirst">
-      Your Claude Code session and your colleague's Codex session are two private terminals
-      that will never know about each other. Oryxa puts them in the same room, on the same
-      question, in front of the same people. <strong>Neither CLI was modified, and neither
-      knows the other is there.</strong>
-    </p>
-
-    <div class="actions">
-      <a class="btn primary" href="https://github.com/Oryxa-Vault/oryxa">Read the source</a>
-      <a class="btn" href="#start">Two-minute quickstart</a>
-      <a class="btn" href="#connect">Connect your agent</a>
-    </div>
-
-    <figure class="shot">
-      <img src="media/room.gif" width="880" height="394"
-           alt="Two browser panes side by side, each a different person, watching the same Oryxa room while Claude Code and Codex answer one question at the same time">
-      <figcaption>
-        Claude Code and Codex — rival labs, two separate CLIs — answering one question at the
-        same time, watched by two people in two browsers. The room costs its slowest agent
-        rather than the sum of them. Recorded from a real session; the script that produces it
-        is in the repo, so it is re-run after a change rather than performed again by hand.
-      </figcaption>
-    </figure>
-  </div>
-
-  <div class="rule"></div>
-
-  <section>
-    <div class="col">
-      <div class="eyebrow">The gap</div>
-      <h2>Your framework owns the agent. Nobody owns the room.</h2>
-      <p>
-        Every agent framework assumes one caller. One session, one prompt, one reply, one
-        person holding the terminal. AI is single-player by construction. The moment a second
-        person needs to see what the agent is doing — or add a correction while it's mid-turn,
-        or take over the thread after lunch — you are writing that yourself.
-      </p>
-      <p>
-        Oryxa is that layer and nothing else. <strong>To the framework, Oryxa is one user.
-        To your team, it's a shared room.</strong> Your prompts, tools, memory and multi-agent
-        orchestration stay exactly where they are.
-      </p>
-      <p>
-        <strong>The core is open source.</strong> Apache 2.0, Go, one binary — the room, the
-        event log, the connector engine, the shim and the viewer. Not a hosted product with a
-        repo attached: <code>docker compose up</code> is the whole thing.
-      </p>
-    </div>
-
-    <div class="figures">
-      <div class="fig">
-        <span class="n">4.9s</span>
-        <span class="d">wall clock for 15.6s of work — five live frameworks answering one question in parallel lanes</span>
-      </div>
-      <div class="fig">
-        <span class="n">35</span>
-        <span class="d">model calls instead of 133, measured on seven live agents, because not everyone answers everything</span>
-      </div>
-      <div class="fig">
-        <span class="n">15MB</span>
-        <span class="d">scratch container, no cgo, viewer embedded — there is nothing to serve alongside it</span>
-      </div>
-    </div>
-  </section>
-
-  <div class="rule"></div>
-
-  <section>
-    <div class="col">
-      <div class="eyebrow">Who answers</div>
-      <h2>A turn is an agent doing work, so silence is a feature.</h2>
-      <p>
-        A connector declares what it engages on, and the room works out who a message is
-        for — an agent mentioned by name, one that declared an interest in what you said,
-        or <strong>nobody at all</strong> when you're asking a colleague directly or just
-        saying thanks.
-      </p>
-    </div>
-
-    <figure class="room">
-      <div class="transcript">
-        <div class="msg human">
-          <span class="name">arsh</span>
-          <div class="bubble">priya how bad is that against runway</div>
-        </div>
-        <div class="wake">wake · <span class="none">nobody</span> — this needs no answer · <b>for priya</b></div>
-
-        <div class="msg human">
-          <span class="name">priya</span>
-          <div class="bubble">thanks</div>
-        </div>
-        <div class="wake">wake · <span class="none">nobody</span> — this needs no answer · <b>chatter</b></div>
-
-        <div class="msg human">
-          <span class="name">sam</span>
-          <div class="bubble">what is driving the spend</div>
-        </div>
-        <div class="wake">wake · <span class="hit">analyst</span> · <b>interest: spend</b></div>
-
-        <div class="msg a">
-          <span class="name">analyst</span>
-          <div class="bubble">Compute is 61k, up 40 percent month over month, and almost all of that increase is one training cluster left running after the eval finished.</div>
-        </div>
-      </div>
-      <figcaption>The bundled demo scenario, on a scripted stand-in agent — three messages, three different reasons, and only one of them costs a turn.</figcaption>
-    </figure>
-
-    <div class="col" style="margin-top: 22px">
-      <p>
-        This starts as an optimisation and stops being one the moment a turn is a whole
-        agentic loop rather than a single model call. 133 calls versus 35 is a pleasant
-        saving when a call is cheap, and a different product when it's a three-minute
-        coding turn.
-      </p>
-    </div>
-
-    <figure class="code">
-      <pre><span class="c"># who would answer this, and why — before you start a session</span>
-$ oryxa wake <span class="s">"we should consider using more ai tools"</span></pre>
-      <figcaption>Say something while an agent is mid-turn and it doesn't queue behind it — the agent picks it up on its next turn along with anything else said meanwhile. Eight messages typed at human speed ran as two turns, not eight.</figcaption>
-    </figure>
-  </section>
-
-  <div class="rule"></div>
-
-  <section id="connect">
-    <div class="col">
-      <div class="eyebrow">Connecting your agent</div>
-      <h2>A connector is a description of HTTP calls, not code.</h2>
-      <p>
-        Nothing in the core knows any framework's name — that's what keeps both sides free.
-        Drop a file in <code>./connectors/</code> or POST it at runtime, and you're done.
-        No Go required.
-      </p>
-    </div>
-
-    <figure class="code">
-      <pre><span class="k">name</span>: my-agent
-<span class="k">base</span>: http://localhost:5000
-
-<span class="k">turn</span>:
-  <span class="k">method</span>: POST
-  <span class="k">path</span>: /run
-  <span class="k">body</span>:
-    <span class="k">prompt</span>: <span class="s">"{{input}}"</span>
-  <span class="k">response</span>:
-    <span class="k">format</span>: json
-    <span class="k">text</span>:
-      - $.output          <span class="c"># tried in order, first match wins</span></pre>
-      <figcaption>Then <code>oryxa check my-agent</code> runs a real probe turn and reports what came back — reachability, timing, whether your selectors matched, and warnings for the ways a connector can pass while being quietly wrong.</figcaption>
-    </figure>
-
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th>Connector</th><th>Framework</th><th>Shape</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>langgraph</td><td>LangGraph</td><td class="shape">per-thread URL, assistant id, SSE</td></tr>
-          <tr><td>adk</td><td>Google ADK</td><td class="shape">global <code>/run_sse</code>, ids in body</td></tr>
-          <tr><td>pydanticai</td><td>Pydantic AI</td><td class="shape">hand-rolled FastAPI, SSE — the generic-http path</td></tr>
-          <tr><td>crewai</td><td>CrewAI</td><td class="shape">no streaming, multi-agent inside one turn</td></tr>
-          <tr><td>bee-agui</td><td>AG-UI (any)</td><td class="shape">typed events — tool calls, reasoning, state deltas</td></tr>
-          <tr><td>claude-code</td><td>Claude Code</td><td class="shape">a command, not a server — NDJSON over stdout</td></tr>
-          <tr><td>codex</td><td>Codex</td><td class="shape">a command too, and different in every detail</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="col" style="margin-top: 22px">
-      <p>
-        Seven genuinely different surfaces, one core, one YAML file each. CrewAI is the
-        sharpest test of the boundary: a crew is multi-agent by design, so one Oryxa turn
-        becomes several LLM calls between the crew's own agents — and Oryxa sees one turn
-        with one result. <strong>Their orchestration stays theirs.</strong>
-      </p>
-      <p>
-        Claude Code and Codex have no HTTP surface at all — they read stdin and write JSON
-        lines. A shim puts a server in front of one, and then it is an ordinary connector
-        reading an ordinary stream. The command line lives in the shim's own config file,
-        never in a connector, because a spec that could name a command to run would turn
-        connector registration into remote code execution.
-      </p>
-    </div>
-  </section>
-
-  <div class="rule"></div>
-
-  <section>
-    <div class="col">
-      <div class="eyebrow">Shared context</div>
-      <h2>Two lines, and an agent joins the room's thinking.</h2>
-      <p>
-        A room has state alongside its transcript — notes, decisions, working values everyone
-        can read and write. It's a fold over the same event log, so it survives a restart and
-        every change is attributed.
-      </p>
-    </div>
-
-    <figure class="code">
-      <pre><span class="k">turn</span>:
-  <span class="k">body</span>:
-    <span class="k">message</span>: <span class="s">"{{context}}\n\n{{input}}"</span>   <span class="c"># reading</span>
-
-<span class="k">context</span>:                                  <span class="c"># writing</span>
-  - <span class="k">key</span>: findings
-    <span class="k">from</span>: $text</pre>
-      <figcaption>Now a researcher's findings are in front of the writer on its next turn, and neither knows the other is there. No tool calling, no prompt change, no awareness that Oryxa exists.</figcaption>
-    </figure>
-
-    <div class="col" style="margin-top: 22px">
-      <p>
-        A stale write is <strong>refused with what is current</strong>, so the caller can merge
-        instead of guessing. Loud conflicts beat clever merges: a silent overwrite leaves state
-        that is syntactically fine and semantically wrong, and surfaces much later as an agent
-        behaving oddly.
-      </p>
-    </div>
-  </section>
-
-  <div class="rule"></div>
-
-  <section id="start">
-    <div class="col">
-      <div class="eyebrow">Start here</div>
-      <h2>A running room with a stand-in agent, in two minutes.</h2>
-    </div>
-
-    <figure class="code">
-      <pre>$ docker compose up -d &amp;&amp; go run ./cmd/mockagent &amp;
-$ open http://localhost:8080</pre>
-      <figcaption>No Docker: <code>go build -o oryxa ./cmd/oryxa</code> then <code>./oryxa launch window</code>. To see it as two people, open the viewer in a second tab and change the name in the composer — both tabs are in the same room, watching the same agent.</figcaption>
-    </figure>
-
-    <figure class="code">
-      <pre><span class="c"># several agents in one room — each gets its own lane and they answer in parallel</span>
-$ curl -X POST localhost:8080/v1/sessions \
-    -d <span class="s">'{"agents":["langgraph","adk","pydanticai","crewai"]}'</span></pre>
-      <figcaption>A room costs its slowest agent rather than the sum of all of them. One agent failing does not stop the others.</figcaption>
-    </figure>
-
-    <figure class="code">
-      <pre><span class="c"># Claude Code and Codex in one room — the shot at the top of this page</span>
-$ export ORYXA_SHIM_TOKEN=$(openssl rand -hex 32)
-$ oryxa-shim -agents shim.yaml &amp;     <span class="c"># same shell, same variable</span>
-$ oryxa serve &amp;
-$ oryxa open claude-code codex</pre>
-      <figcaption>Both CLIs already installed and signed in; the shim gives them an HTTP surface and then they are ordinary connectors. Set <code>ORYXA_SHIM_TOKEN</code> on only one side and every agent looks healthy while every turn fails with a 401 that names neither end. Read the limits below first — both agents can write inside their working directory.</figcaption>
-    </figure>
-  </section>
-
-  <div class="rule"></div>
-
-  <section>
-    <div class="col">
-      <div class="eyebrow">Honest limits</div>
-      <h2>What isn't built yet.</h2>
-
-      <div class="limits">
-        <h3>The coding agents can write, and that is the sharp edge.</h3>
-        <p>
-          Both shipped CLI agents write inside their working directory, because read-only made
-          them worse colleagues than they needed to be — an agent that cannot run the tests
-          cannot verify anything. <strong>Anyone who can reach that room can cause writes to
-          that directory.</strong> They are confined differently: Codex by the OS sandbox,
-          Claude Code by path-patterned permissions only. Point it at a checkout you can throw
-          away.
-        </p>
-      </div>
-
-      <p style="margin-top: 22px">
-        Rooms are scoped — each carries a secret, and turns are budgeted per room and per
-        server. A room key binds a name to a capability, so a name can be proved rather than
-        claimed, and every message records which. All of it is off by default so the
-        two-minute quickstart stays two minutes; none of it should be off anywhere else.
-      </p>
-      <p>
-        Still missing: agents have no owners, so the room's idea of who is in it is "everyone
-        who has spoken"; no presence; turns are bounded per minute but not in flight at once;
-        and events carry neither a hash chain nor token counts, so the log is durable but not
-        tamper-evident and cost per turn cannot be derived from it. <code>PLAN.md</code> in the
-        repo is the source of truth and carries the same list with the reasoning for each.
-      </p>
-      <p>
-        <code>/v1</code> is stable. The connector spec is stable and additive — new fields,
-        never changed meanings — so a connector written today keeps working.
-      </p>
-    </div>
-  </section>
-
-  <div class="rule"></div>
-
-  <section>
-    <div class="col">
-      <div class="eyebrow">Contributing</div>
-      <h2>The most useful thing is a connector for a framework we haven't tested.</h2>
-      <p>
-        That's one YAML file, no Go required. If you tried Oryxa and got stuck, an issue
-        saying where you got lost is worth real work to us — it tells us exactly where the
-        docs are wrong.
-      </p>
-      <div class="actions" style="margin-top: 22px">
-        <a class="btn primary" href="https://github.com/Oryxa-Vault/oryxa">GitHub</a>
-        <a class="btn" href="https://github.com/Oryxa-Vault/oryxa/blob/main/CONTRIBUTING.md">Contributing</a>
-        <a class="btn" href="https://github.com/Oryxa-Vault/oryxa/blob/main/docs/tutorial.md">Tutorial</a>
-        <a class="btn" href="https://github.com/Oryxa-Vault/oryxa/blob/main/docs/integrating.md">Integration guide</a>
-      </div>
-    </div>
-  </section>
-
-  <footer>
-    <span>Oryxa</span>
-    <span>Apache 2.0</span>
-    <span>Go 1.25+</span>
-    <span class="spacer"></span>
-    <span>the log is the source of truth</span>
-  </footer>
-
-</div>
-
+<span class="accent">turn</span>:
+  <span class="accent">method</span>: POST
+  <span class="accent">path</span>: /run
+  <span class="accent">body</span>:
+    <span class="accent">prompt</span>: "{{input}}"
+  <span class="accent">response</span>:
+    <span class="accent">format</span>: json
+    <span class="accent">text</span>:
+      - $.output  <span class="dim"># first matching path wins</span></pre></div><div class="architecture-grid"><article><div class="eyebrow">The core</div><h3>Oryxa</h3><p>The session runtime owns input, presence, streaming output and the shared event log.</p></article><article><div class="eyebrow">Connected to it</div><h3>Your agent</h3><ul><li>LangGraph</li><li>Google ADK</li><li>Pydantic AI</li><li>CrewAI</li></ul></article><article><div class="eyebrow">Also supported</div><h3>Your coding agent</h3><ul><li>Claude Code</li><li>Codex</li><li>Any ACP agent</li><li>Any HTTP service</li></ul></article></div></section>
+    <section class="quickstart" id="start" aria-labelledby="start-title"><div class="shell quickstart-grid"><div><div class="eyebrow">Start in two minutes</div><h2 id="start-title">One binary.<br><span class="soft">Your agents.</span></h2><p class="lead">Run Oryxa locally, open a room and bring your own framework when you are ready.</p><div class="install-box"><code id="install-command">curl -fsSL https://oryxa.in/install.sh | sh</code><button class="button" id="copy-install" type="button" aria-describedby="copy-status">Copy</button></div><span id="copy-status" role="status" aria-live="polite"></span></div><div class="steps" aria-label="Getting started steps"><div class="step"><span class="step-num">01</span><div><strong>Install Oryxa</strong><p>The CLI starts a local server and keeps rooms durable on your machine.</p></div></div><div class="step"><span class="step-num">02</span><div><strong>Open a room</strong><p>Use a bundled stand-in agent or point a connector at your own service.</p></div></div><div class="step"><span class="step-num">03</span><div><strong>Invite the team</strong><p>People join through the embedded browser viewer and follow every turn live.</p></div></div><div class="actions"><a class="button" href="https://github.com/Oryxa-Vault/oryxa/blob/main/docs/tutorial.md">Open the tutorial ↗</a></div></div></div></section>
+    <section class="shell close" aria-labelledby="closing-title"><div class="closing"><div class="eyebrow">Open source · Apache 2.0 · Rust</div><h2 id="closing-title">The infrastructure behind<br><span class="soft">multiplayer AI.</span></h2><div class="actions"><a class="button dark" href="https://github.com/Oryxa-Vault/oryxa">View on GitHub ↗</a><a class="button" href="https://github.com/Oryxa-Vault/oryxa/blob/main/docs/tutorial.md">Read the tutorial ↗</a></div></div></section>
+  </main>
+  <footer class="shell"><span>oryxa</span><span>Apache 2.0</span><a href="/llms.txt">Agent index</a><a href="/openapi.yaml">OpenAPI</a><a href="https://github.com/Oryxa-Vault/oryxa">GitHub ↗</a></footer>
+  <script>
+    const copyButton = document.querySelector('#copy-install');
+    const copyStatus = document.querySelector('#copy-status');
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(document.querySelector('#install-command').textContent);
+        copyButton.textContent = 'Copied';
+        copyStatus.textContent = 'Install command copied to clipboard.';
+        window.setTimeout(() => { copyButton.textContent = 'Copy'; copyStatus.textContent = ''; }, 1800);
+      } catch {
+        copyStatus.textContent = 'Select the command and copy it manually.';
+      }
+    });
+  </script>
 </body>
 </html>

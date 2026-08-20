@@ -37,49 +37,50 @@ room; Oryxa drives the agents in it and streams everything back live.
     ┌─────────────┐
     │   Oryxa     │  owns: input queue, event log, presence, streaming out
     └──────┬──────┘
-           │ connector (declarative HTTP)
+           │ connector (declarative HTTP or local ACP)
            ▼
     ┌─────────────┐
     │ your agent  │  keeps: prompts, tools, memory, orchestration
     └─────────────┘
 ```
 
-To the framework, Oryxa is one user. Nothing about the agent changes — no SDK,
-no prompt edit, no awareness that Oryxa exists. A **connector** is a YAML file
-describing HTTP calls. That is the whole integration surface.
+To the framework, Oryxa is one user. Nothing about the agent changes — no prompt
+edit and no awareness that Oryxa exists. A **connector** is a YAML file describing
+HTTP calls or an operator-controlled local ACP process. The runtime API can
+register HTTP connectors but can never name an ACP command.
 
 ---
 
 ## Task A: Get it running
 
-**Step 1.** Check Go is 1.25 or newer.
+**Step 1.** Check Rust is installed.
 
 ```bash
-go version
+cargo --version
 ```
 
-If it is older, stop and tell the user — nothing below will build.
+If there is no cargo, stop and tell the user: either install Rust, or install
+the released binary with `curl -fsSL https://oryxa.in/install.sh | sh` and skip
+to Task B. Everything below builds from source, which is what you want when the
+work is on the core.
 
 **Step 2.** Work from a clone.
 
 ```bash
 git clone https://github.com/Oryxa-Vault/oryxa && cd oryxa
-go build -o oryxa ./cmd/oryxa
+cargo build --bins
 ```
 
 **Do this even if `oryxa` is already installed.** Connectors are *files*, and
-`oryxa` reads `./connectors` — a `go install`ed binary run anywhere else sees no
-agents at all, and every command answers `no connectors in ./connectors`. That
-error means you are in the wrong directory, not that anything is broken.
-
-`go install github.com/Oryxa-Vault/oryxa/cmd/oryxa@latest` is for later, once
-the user has their own connector directory to point `-connectors` at.
+`oryxa` reads `./connectors` — an installed binary run anywhere else reads
+`~/.config/oryxa/connectors` instead and sees none of the examples. An empty
+agent list means you are in the wrong directory, not that anything is broken.
 
 **Step 3.** Start the stand-in agent, then the server.
 
 ```bash
-go run ./cmd/mockagent &     # :9000 — something real to probe
-./oryxa serve &              # :8080
+./target/debug/mockagent &   # :9000 — something real to probe
+./target/debug/oryxa serve & # :8080
 ```
 
 **Check.** In another shell:
@@ -94,7 +95,7 @@ read its output before continuing.
 **Step 4.** Confirm a turn works end to end.
 
 ```bash
-./oryxa check mock-json
+./target/debug/oryxa check mock-json
 ```
 
 Expect `reachable ok`, a timing, and a sample answer. The stand-in connectors
@@ -219,7 +220,8 @@ oryxa send <session-id> "hello" -f
 ```
 
 **Done when:** the agent answers in the room, not just in `check`. Tell the user
-the session id and that the viewer is at http://localhost:8080.
+the session id, that `oryxa` on its own opens the room to watch and talk in, and
+that the viewer is at http://localhost:8080 for anyone who wants a browser tab.
 
 ### Optional: let it read and write the room's shared state
 
@@ -239,9 +241,16 @@ context:                                  # writing
 
 ## Task C: Connect a coding agent
 
-Claude Code and Codex have no HTTP surface — they read stdin and write JSON
-lines. `oryxa-shim` puts a server in front of one, and then it is an ordinary
-connector.
+ACP-compatible coding agents use the first-class local ACP transport: one
+long-lived subprocess and ACP session per room-agent lane. The retained
+`oryxa-shim` puts an HTTP server in front of agents that do not expose ACP.
+
+Whoever is in the room brokers permission for ACP lanes. Permission requests
+become durable room interactions and remain paused until someone selects one of
+the exact options supplied by the agent: the room view (`oryxa`) prompts for
+them, `oryxa approve <room>` answers them from a script, and any other client
+can use the interaction list and resolve endpoints. Cancelling a turn cancels
+its unresolved request; nothing is silently approved.
 
 > **Stop and ask the user before you run this.** Both shipped agents can
 > **write inside their working directory**, and anyone who can reach the room
@@ -295,39 +304,53 @@ as an agent that will not try rather than one that cannot.
 user's behalf. That removes the only boundary Claude Code has. If they ask for
 it, tell them what it costs first.
 
-What may run lives in [`shim.yaml`](shim.yaml) and can never be set over HTTP.
-That is why the shim is a separate process: `POST /v1/agents` accepts connectors
-at runtime, so a spec that could name a command would be remote code execution
-behind one shared token.
+What may run lives in [`shim.yaml`](shim.yaml) or an operator-controlled ACP
+connector file and can never be set over HTTP. `POST /v1/agents` accepts HTTP
+connectors at runtime; allowing that endpoint to name a command would be remote
+code execution behind one shared token.
 
 ---
 
 ## Task D: Work on the core
 
+The core is Rust:
+
+```bash
+cargo test --all-targets
+cargo fmt --all --check    # must print nothing
+cargo clippy --all-targets -- -D warnings
+```
+
+`oryxa-shim` is still Go, and so is the client package and the server its tests
+run against:
+
 ```bash
 go build ./...
-go test ./...
 go test -race ./...        # the session loop is concurrent — this is the one that matters
 go vet ./...
 gofmt -l .                 # must print nothing
 ```
 
-CI also runs `staticcheck`, a test that fails if `openapi.yaml` and the
-registered routes disagree in either direction, and a check that no framework
-name appears in `internal/`. Run the race detector before claiming a concurrency
-fix works.
+CI runs both, plus `staticcheck`, a test that fails if `openapi.yaml` and the
+registered Rust routes disagree in either direction, and a check that no
+framework name appears in core code.
 
 ### Layout
 
 ```
-cmd/oryxa/          server + CLI
-cmd/oryxa-shim/     HTTP in front of agents that only speak stdin/stdout
-cmd/mockagent/      stand-in agent for testing
-internal/connector/ spec, templating, selectors, HTTP executor, check
-internal/session/   the room: membership, lanes, turn loop
-internal/events/    append-only log
-internal/api/       HTTP surface
-internal/sharedctx/ shared context
+src/bin/oryxa.rs    the binary: server, room view and every command
+src/bin/mockagent.rs stand-in agent for testing
+src/tui/            the room view — state, keys, drawing
+src/cli/            the client half: HTTP, SSE, room secrets, printing
+src/runtime.rs      binding a server, for `serve` and for the room view
+src/connector/      spec, templating, selectors, HTTP and ACP executors, check
+src/session/        the room: membership, lanes, turn loop
+src/events/         append-only log
+src/api/            HTTP surface
+src/sharedctx/      shared context
+install.sh          the one-URL installer, published to oryxa.in
+cmd/oryxa-shim/     HTTP in front of agents that only speak stdin/stdout (Go)
+internal/           the Go server, kept for the client package's tests
 client/             the one exported Go package, a thin wrapper over /v1
 connectors/         connector files, loaded at startup
 shim.yaml           what the shim may run — never settable over HTTP
@@ -380,13 +403,13 @@ Check it before implementing something that may already be deliberately absent.
 | verified against | Claude Code 2.1.208, codex-cli 0.147.0 |
 | coding-agent timeout | 15m |
 | turn budgets | 30/min per room, 120/min per server, `0` disables |
-| store | in-memory unless `-db` names a postgres DSN |
-| auth | off unless `-token` is set; the startup banner says which |
+| store | in-memory unless `--db` names a postgres DSN |
+| auth | off unless `--token` is set; the startup banner says which |
 | licence | Apache 2.0 |
 
-Every command takes `-json`, which is what you should use when parsing output.
-Room commands take `-server` and `-token`, falling back to `ORYXA_URL` and
-`ORYXA_TOKEN`; connector commands take `-connectors`, falling back to
+Every command takes `--json`, which is what you should use when parsing output.
+Room commands take `--server` and `--token`, falling back to `ORYXA_URL` and
+`ORYXA_TOKEN`; connector commands take `--connectors`, falling back to
 `ORYXA_CONNECTORS`.
 
 **Report honestly.** If `check` still warns, say so rather than declaring

@@ -25,8 +25,9 @@ should not stay this way outside your laptop:
   └─ connectors  4 loaded from /connectors
 ```
 
-No Docker? `go build -o oryxa ./cmd/oryxa && ./oryxa launch window` gets you the
-same thing with an in-memory log.
+No Docker? `cargo run --bin oryxa -- serve` gets you the same thing with an
+in-memory log, and `cargo run --bin oryxa` opens the room view instead of the
+browser — it starts its own runtime, with a log that survives the restart.
 
 ---
 
@@ -35,7 +36,7 @@ same thing with an in-memory log.
 Before touching your own agent, see the shape of the thing:
 
 ```bash
-go run ./cmd/mockagent      # a fake agent on :9000
+cargo run --bin mockagent   # a fake agent on :9000
 ```
 
 In the viewer: click **mock-sse** in the sidebar. That runs a real probe turn and

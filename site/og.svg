@@ -1,31 +1,23 @@
-<!-- Authored on a 1200x1200 canvas with the card in the centre 630 band, because
-     qlmanage renders to a square and the centre crop must land exactly. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
-  <rect width="1200" height="1200" fill="#0b0f10"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#f7f7f5"/>
+  <path d="M72 76H1128" stroke="#d8d8d4"/>
+  <text x="72" y="54" fill="#1d1d1b" font-family="Inter, Arial, sans-serif" font-size="24" letter-spacing="-1">oryxa</text>
 
-  <!-- hairline frame, echoing the viewer's panels -->
-  <rect x="56" y="341" width="1088" height="518" fill="none" stroke="#232c2e" stroke-width="2"/>
+  <text x="72" y="186" fill="#8c8c89" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="600" letter-spacing="4">MULTIPLAYER AI INFRASTRUCTURE</text>
+  <text x="72" y="288" fill="#1d1d1b" font-family="Inter, Arial, sans-serif" font-size="74" letter-spacing="-4">AI is becoming a team sport.</text>
+  <text x="72" y="372" fill="#8c8c89" font-family="Inter, Arial, sans-serif" font-size="74" letter-spacing="-4">Give it a room.</text>
+  <text x="72" y="438" fill="#666663" font-family="Inter, Arial, sans-serif" font-size="24">Many people. Many agents. One shared session.</text>
 
-  <!-- wordmark -->
-  <text x="104" y="431" fill="#3ddc97" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="26" font-weight="700" letter-spacing="9">ORYXA</text>
+  <g transform="translate(1060 300)">
+    <path d="M0 0L-92-92M0 0L92-92M0 0L-92 92M0 0L92 92" stroke="#cbcbc7" stroke-width="2"/>
+    <circle r="16" fill="#1d1d1b"/>
+    <circle cx="-92" cy="-92" r="10" fill="#f7f7f5" stroke="#8c8c89"/>
+    <circle cx="92" cy="-92" r="10" fill="#f7f7f5" stroke="#8c8c89"/>
+    <circle cx="-92" cy="92" r="10" fill="#f7f7f5" stroke="#8c8c89"/>
+    <circle cx="92" cy="92" r="10" fill="#f7f7f5" stroke="#8c8c89"/>
+  </g>
 
-  <!-- headline -->
-  <text x="104" y="557" fill="#f2f7f5" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="56" font-weight="700">AI is single-player.</text>
-  <text x="104" y="625" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="56" font-weight="400">Oryxa makes it multiplayer.</text>
-  <text x="104" y="702" fill="#3ddc97" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="32" font-weight="400">Claude Code and Codex, one room.</text>
-
-  <!-- agent lanes -->
-  <circle cx="112" cy="787" r="7" fill="#3ddc97"/>
-  <text x="132" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="21">claude-code</text>
-  <circle cx="300" cy="787" r="7" fill="#a78bfa"/>
-  <text x="320" y="794" fill="#7d8a87" font-family="ui-monospace, SF Mono, Menlo, monospace"
-        font-size="21">codex</text>
-
-  <text x="1096" y="794" fill="#5b6664" text-anchor="end"
-        font-family="ui-monospace, SF Mono, Menlo, monospace" font-size="21">Apache 2.0 · Go</text>
+  <rect x="72" y="510" width="1056" height="58" fill="#1d1d1b"/>
+  <text x="98" y="547" fill="#f7f7f5" font-family="Inter, Arial, sans-serif" font-size="15" letter-spacing="3">OPEN SOURCE · APACHE 2.0 · RUST</text>
+  <text x="1102" y="547" fill="#b8b8b4" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="16">oryxa.in</text>
 </svg>

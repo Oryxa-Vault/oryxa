@@ -9,14 +9,14 @@ spend.
 
 ---
 
-## Durability — `-db`
+## Durability — `--db`
 
 ```bash
-oryxa serve -db 'postgres://user:pass@host:5432/oryxa?sslmode=disable'
+oryxa serve --db 'postgres://user:pass@host:5432/oryxa?sslmode=disable'
 ```
 
 Sessions are a fold over the event log, so a restart replays them — history,
-agents and all — rather than losing them. Without `-db` the log is in-memory and
+agents and all — rather than losing them. Without `--db` the log is in-memory and
 the server says so at startup:
 
 ```
@@ -33,10 +33,10 @@ re-queued.
 Agent registrations made over the API are durable too — they go to the log and
 are restored on start, attributed to whoever made them.
 
-## The API token — `-token`
+## The API token — `--token`
 
 ```bash
-oryxa serve -token "$(openssl rand -hex 32)"
+oryxa serve --token "$(openssl rand -hex 32)"
 ```
 
 Send it as `Authorization: Bearer <token>`, or sign in through the viewer, which
@@ -55,7 +55,7 @@ are yours. Creating one returns it, once:
 oryxa open claude-code codex
 #   s_9a2d0e49
 #   secret  72177eac70…
-#   someone else joins with: oryxa tail s_9a2d0e49 -secret 72177eac70…
+#   someone else joins with: oryxa tail s_9a2d0e49 --secret 72177eac70…
 ```
 
 Send it as `X-Oryxa-Session`, or let the CLI remember it — rooms opened on this
@@ -79,14 +79,14 @@ any other. Every message records how its author was established — `trusted`,
 Oryxa deliberately does not establish who anyone is. Whoever holds the room
 decides that this key is Priya, exactly as they decide who gets in at all.
 
-## Identity from your proxy — `-trust-header`
+## Identity from your proxy — `--trust-header`
 
 Oryxa has no accounts. Your deployment already has identity, and duplicating it
 here would be the same mistake as duplicating orchestration. Point it at the
 header your proxy already sets and the log records people instead of claims:
 
 ```bash
-oryxa serve -trust-header X-Forwarded-User   # oauth2-proxy, Pomerium,
+oryxa serve --trust-header X-Forwarded-User   # oauth2-proxy, Pomerium,
                                              # Cloudflare Access, ALB, Istio…
 ```
 
@@ -103,7 +103,7 @@ Unset, authors stay self-declared and the startup banner says so:
 ## Turn budgets
 
 ```bash
-oryxa serve -room-turns-per-min 30 -turns-per-min 120
+oryxa serve --room-turns-per-min 30 --turns-per-min 120
 ```
 
 30 a minute per room and 120 across the server by default, `0` for unlimited.
@@ -112,7 +112,7 @@ A turn is an agent doing work, so this is the budget that costs money rather
 than a request counter: one message can wake seven agents and cost seven, or
 wake nobody and cost nothing. The wake ladder shows up in the bill.
 
-## The agent registry — `-admin-token`
+## The agent registry — `--admin-token`
 
 Guards adding and removing agents, sent as `X-Oryxa-Admin`. Reading the registry
 and `check` stay open, so the viewer keeps working.
@@ -126,10 +126,10 @@ URL this server fetches, so without a line there, `POST /v1/agents` reads any
 internal service — and on a cloud host, the metadata endpoint holding its
 credentials. Connectors in `connectors/` are unaffected and may point anywhere,
 because a file on disk is configuration and pointing at localhost is what every
-connector here does. `-allow-private-agents` restores the old behaviour when you
+connector here does. `--allow-private-agents` restores the old behaviour when you
 register agents on a private network deliberately.
 
-## A long room stops forgetting — `-summariser`
+## A long room stops forgetting — `--summariser`
 
 A list is bounded where it is **rendered**, not where it is stored: twenty items
 reach a prompt and the log keeps everything. Left there, a long room forgets
@@ -137,7 +137,7 @@ quietly — an agent answering from a partial room sounds exactly as confident a
 one answering from a whole one.
 
 ```bash
-oryxa serve -summariser room-summariser
+oryxa serve --summariser room-summariser
 ```
 
 ```

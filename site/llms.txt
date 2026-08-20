@@ -1,0 +1,27 @@
+# Oryxa
+
+> Oryxa is open-source multiplayer AI infrastructure: a shared runtime, event log and connector layer where many people and many AI agents work in one live room.
+
+Oryxa lets teams connect independent HTTP or ACP agents without moving those agents' prompts, tools, memory or internal orchestration into Oryxa. The project is Apache 2.0 licensed and implemented primarily in Rust.
+
+## Start here
+
+- [Oryxa website](https://oryxa.in/): Product overview, architecture and quickstart
+- [Source repository](https://github.com/Oryxa-Vault/oryxa): Source code, examples and releases
+- [Install script](https://oryxa.in/install.sh): Installer for supported Linux and macOS systems
+- [Tutorial](https://github.com/Oryxa-Vault/oryxa/blob/main/docs/tutorial.md): Run Oryxa and connect an agent end to end
+
+## Build with Oryxa
+
+- [OpenAPI specification](https://oryxa.in/openapi.yaml): Stable HTTP API contract
+- [Integration guide](https://github.com/Oryxa-Vault/oryxa/blob/main/docs/integrating.md): Connector recipes, streaming, conversations and response selectors
+- [Connector examples](https://github.com/Oryxa-Vault/oryxa/tree/main/connectors): Working YAML integrations for agent frameworks and coding agents
+- [CLI reference](https://github.com/Oryxa-Vault/oryxa/blob/main/docs/cli.md): Room view, commands and scripting surface
+- [Production guide](https://github.com/Oryxa-Vault/oryxa/blob/main/docs/running.md): Durability, auth, identity, budgets and deployment
+
+## Project context
+
+- [README](https://github.com/Oryxa-Vault/oryxa/blob/main/README.md): Canonical project description and current status
+- [Security](https://github.com/Oryxa-Vault/oryxa/blob/main/SECURITY.md): Security posture and coding-agent limits
+- [Roadmap](https://github.com/Oryxa-Vault/oryxa/blob/main/PLAN.md): Built, planned and explicitly out-of-scope work
+- [Detailed agent context](https://oryxa.in/llms-full.txt): Curated facts and terminology for grounded answers

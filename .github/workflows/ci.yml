@@ -29,6 +29,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - name: rustfmt
+        run: cargo +stable fmt --all --check
+
+      - name: Rust build and test
+        run: cargo +stable test --locked --all-targets
+
+      - name: Clippy
+        run: cargo +stable clippy --locked --all-targets -- -D warnings
+
+      - name: The installer is valid shell
+        run: sh -n install.sh
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
@@ -62,7 +77,8 @@ jobs:
       # Comments are exempt on purpose: several of them name a framework to
       # explain why a feature exists (ADK's thought flag, AG-UI's typed events),
       # and that reasoning is worth keeping. Tests are exempt because their
-      # fixtures replay real payloads. What must stay clean is executable code.
+      # fixtures replay real payloads — in Rust those are inline `#[cfg(test)]`
+      # modules at the end of a file, so the file is read up to that point.
       #
       # The command-line agents are in the list for the same reason as the
       # frameworks, and it binds oryxa-shim too: the shim is a way to run a
@@ -71,8 +87,16 @@ jobs:
       - name: no framework names in core code
         run: |
           fail=0
+          names="langgraph|crewai|pydantic|ag-ui|\badk\b|claude|codex"
+          for f in $(find src -name '*.rs'); do
+            hits=$(sed -e '/#\[cfg(test)\]/,$d' -e 's://.*::' "$f" | grep -inE "$names" || true)
+            if [ -n "$hits" ]; then
+              echo "$hits" | sed "s|^|$f:|"
+              fail=1
+            fi
+          done
           for f in $(find internal cmd -name '*.go' ! -name '*_test.go'); do
-            hits=$(sed -e 's://.*::' "$f" | grep -inE "langgraph|crewai|pydantic|ag-ui|\badk\b|claude|codex" || true)
+            hits=$(sed -e 's://.*::' "$f" | grep -inE "$names" || true)
             if [ -n "$hits" ]; then
               echo "$hits" | sed "s|^|$f:|"
               fail=1
@@ -84,15 +108,12 @@ jobs:
           fi
           echo "core is framework-agnostic"
 
-      # LoadDir validates every file in the directory, so one call per directory
-      # covers all of them. A malformed file reports "loading connectors:";
-      # anything else means they all parsed.
+      # load_dir validates every file in the directory, so listing the agents
+      # in one is enough to prove they all parse: a malformed file fails the
+      # load and takes the command with it.
       - name: every shipped connector and template parses
         run: |
           for dir in connectors connectors/templates; do
-            out=$(go run ./cmd/oryxa check __none__ -connectors "$dir" 2>&1 || true)
-            case "$out" in
-              *"loading connectors:"*) echo "$out"; exit 1 ;;
-              *) echo "  $dir parsed: $(echo "$out" | grep -o 'available: .*' || echo ok)" ;;
-            esac
+            echo "  $dir"
+            cargo +stable run --locked --quiet --bin oryxa -- agents --connectors "$dir"
           done
