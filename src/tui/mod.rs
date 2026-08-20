@@ -8,6 +8,7 @@
 
 pub mod app;
 mod ui;
+pub mod welcome;
 
 use std::{io::Stdout, path::PathBuf};
 
@@ -30,7 +31,7 @@ use crate::{
     tui::app::{App, Screen},
 };
 
-pub async fn run(options: ServerOptions, express: bool) -> Result<()> {
+pub async fn run(options: ServerOptions, express: bool, show_welcome: bool) -> Result<()> {
     let (client, local) = attach_or_start(
         &options.server,
         &options.token,
@@ -39,7 +40,7 @@ pub async fn run(options: ServerOptions, express: bool) -> Result<()> {
     )
     .await?;
     let mut terminal = enter()?;
-    let result = loop_until_quit(&mut terminal, client, local, express).await;
+    let result = loop_until_quit(&mut terminal, client, local, express, show_welcome).await;
     leave(terminal)?;
     result
 }
@@ -77,9 +78,11 @@ async fn loop_until_quit(
     client: Client,
     local: Option<PathBuf>,
     express: bool,
+    show_welcome: bool,
 ) -> Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let mut app = App::new(client, tx, local);
+    app.welcome = show_welcome || !welcome::already_seen();
     // Only true when this view started the runtime: attaching to someone
     // else's server does not change how that server answers.
     app.express = express && app.local_connectors.is_some();
@@ -126,6 +129,15 @@ fn on_key(app: &mut App, key: KeyEvent) {
     // not sit under a working interface.
     app.error = None;
     app.note = None;
+    if app.welcome {
+        app.welcome = false;
+        welcome::remember_seen();
+        // ctrl-c on the first screen means "I did not mean to open this".
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            app.quit = true;
+        }
+        return;
+    }
     if app.help {
         app.help = false;
         return;

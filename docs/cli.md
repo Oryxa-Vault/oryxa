@@ -26,6 +26,12 @@ own flags.
 oryxa
 ```
 
+The first run opens on a welcome screen: the keys, and what a room can do to
+the machine it is running on. It is shown once and then not again — a splash
+that reappears every launch is one people learn to dismiss without reading,
+which would defeat the half of it that matters. `oryxa --welcome` brings it
+back.
+
 No command, and you are in the rooms. It follows the live stream, so you watch
 several agents answer at once rather than reading it back afterwards.
 

@@ -206,6 +206,8 @@ pub struct App {
     pub error: Option<String>,
     pub note: Option<String>,
     pub help: bool,
+    /// The first screen, up until any key is pressed.
+    pub welcome: bool,
     pub quit: bool,
 }
 
@@ -230,6 +232,7 @@ impl App {
             error: None,
             note: None,
             help: false,
+            welcome: false,
             quit: false,
         };
         app.load_rooms();

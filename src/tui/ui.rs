@@ -37,6 +37,12 @@ fn agent_color(name: &str) -> Color {
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
+    // Before anything else and instead of everything else: the risks are on it,
+    // and a warning behind a room is a warning nobody read.
+    if app.welcome {
+        crate::tui::welcome::draw(frame, area);
+        return;
+    }
     let [header, body, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(3),

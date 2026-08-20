@@ -27,6 +27,10 @@ struct Cli {
     /// Applies to a runtime this starts, not to one it attaches to.
     #[arg(short = 'e', long, env = "ORYXA_EXPRESS", default_value_t = false)]
     express: bool,
+    /// Show the welcome screen again — what the keys are, and what a room can
+    /// do to this machine.
+    #[arg(long, default_value_t = false)]
+    welcome: bool,
     #[command(flatten)]
     options: ServerOptions,
 }
@@ -273,7 +277,7 @@ fn speaker() -> String {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        None => tui::run(cli.options, cli.express).await,
+        None => tui::run(cli.options, cli.express, cli.welcome).await,
         Some(Command::Serve(options)) => serve(options).await,
         Some(Command::Agents(options)) => agents(options),
         Some(Command::Which(options)) => which(options),
