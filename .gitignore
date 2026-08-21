@@ -30,6 +30,7 @@
 # sharing one.
 !/connectors/claude-code-acp.yaml
 !/connectors/codex-acp.yaml
+!/connectors/opencode-acp.yaml
 # bee-agui.yaml stays local: it names a private internal service. The generic
 # AG-UI template covers the same protocol for everyone else.
 
